@@ -19,6 +19,31 @@ class Cell:
         self.bottomArea = 0.0
         self.topArea = 0.0
         self.volume = 0.0
+    
+    @staticmethod
+    def RiemannFlux(ul,ur):
+
+        # Solves exact riemann problem for burgers equation
+        if (ul > ur):
+            s = 0.5*(ul+ur)
+            if (s >= 0.0):
+                ustar = ul
+            else:
+                ustar = ur
+        else:
+            if (ul >= 0.0):
+                ustar = ul
+            elif(ur <= 0.0):
+                ustar = ur
+            else:
+                ustar = 0.0
+            
+    
+        return __class__.flux(ustar)
+    
+    @staticmethod
+    def flux(u):
+        return 0.5*u*u
 
 class Block:
     
@@ -59,13 +84,11 @@ class Block:
 
     def set_initial_condition(self,initial_condition):
        
-        if (initial_condition == "Gausian Bump"):
+        if (initial_condition == "Gaussian Bump"):
           self.Gaussian_Bump()
         else:
            raise Exception("Initial condition not yet implemented")
        
-
-
     @staticmethod
     def verify_input(L,M):
         if not isinstance(L, np.ndarray) or L.size != 3:
@@ -77,5 +100,18 @@ class Block:
         if not np.issubdtype(M.dtype, np.integer):
            raise TypeError("Block: M array is not integer array")
         
+    def Gaussian_Bump(self):
+       
+        Xc = self.L/2.0 # center of box
+        for i in range(self.M[0]):
+            for j in range(self.M[1]):
+                for k in range(self.M[2]):
+                    X = self.grid[i][j][k].X - Xc
+                    if (np.sqrt(X.dot(X)) < 1.0):
+                        self.grid[i][j][k].u = np.exp(-1.0/(1-X.dot(X)))/np.exp(-1.0)
+                    else:
+                        self.grid[i][j][k].u = 0.0
+                       
+
 
 
