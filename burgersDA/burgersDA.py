@@ -126,7 +126,7 @@ class Block:
     def evaluate_residual(self):
         if (self.order == 1):
             self.clear_old_residual()
-            self.apply_BCs()
+            self.apply_BCs_order1()
             self.fluxes_order1()
         else:
             raise NotImplementedError("residual evaluation not implemented for this order")
@@ -134,12 +134,12 @@ class Block:
     def fluxes_order1(self):
         
         Ngc = self.NGc/2
-        # Loop from 1st inner cell to last inner cell in x
-        #           1st inner cell to last inner cell in y
-        #           1st inner cell to last inner cell in z.
-        for i in range(Ngc, self.M[0] - Ngc_east): 
-            for j in range(Ngc, self.M[1] - Ngc_east):
-                for k in range(Ngc, self.M[2] - Ngc_east):
+        # Loop from 1st inner cell to first ghost cell in x
+        #           1st inner cell to first ghost cell in y
+        #           1st inner cell to lfirst ghost cell in z.
+        for i in range(Ngc, self.M[0] - Ngc+1): 
+            for j in range(Ngc, self.M[1] - Ngc+1):
+                for k in range(Ngc, self.M[2] - Ngc+1):
                     v = self.grid[i][j][k].volume
                     eA = self.grid[i][j][k].eastArea
                     sA = self.grid[i][j][k].southArea
@@ -175,7 +175,40 @@ class Block:
                     v = self.grid[i][j][k+1].volume
                     self.grid[i][j][k+1].dudt -= (tA/v)*h
 
+    def clear_old_residual(self):
 
+        Ngc = self.NGc/2
+        # Loop from 1st inner cell to first ghost cell in x
+        #           1st inner cell to first ghost cell in y
+        #           1st inner cell to lfirst ghost cell in z.
+        for i in range(Ngc, self.M[0] - Ngc+1): 
+            for j in range(Ngc, self.M[1] - Ngc+1):
+                for k in range(Ngc, self.M[2] - Ngc+1):
+                    self.grid[i][j][k].dudt = 0.0
+
+    def apply_BCs_order1(self):
+        # Constant extrapolation
+
+        Ngc = self.NGc/2
+        i1 = Ngc - 1 # first ghost index
+        
+        i2  = self.M[0] - NGc # last ghost index
+        for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    self.grid[i1][j][k].u = self.grid[i1+1][j][k].u
+                    self.grid[i2][j][k].u = self.grid[i2-1][j][k].u
+
+        i2  = self.M[1] - NGc # last ghost index
+        for i in range(Ngc, self.M[0] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    self.grid[i][i1][k].u = self.grid[i][i1+1][k].u
+                    self.grid[i][i2][k].u = self.grid[i][i2-1][k].u
+
+        i2  = self.M[2] - NGc # last ghost index
+        for i in range(Ngc, self.M[0] - Ngc):
+                for j in range(Ngc, self.M[1] - Ngc):
+                    self.grid[i][j][i1].u = self.grid[i][j][i1+1].u
+                    self.grid[i][j][i2].u = self.grid[i][j][i2-1].u
 
 # class InputParameters:
 
