@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 
 class Cell:
 
@@ -50,6 +51,7 @@ class Block:
     
     def __init__(self,IPs):
         self.verify_input(IPs)
+        self.IC = IPs["Initial Condition"]
         L = IPs["Block Dimensions"]
         M = IPs["Number of Cells"]
         self.order = IPs["Reconstruction Order"]
@@ -60,6 +62,7 @@ class Block:
                        # cells on each face)
         self.grid = np.empty(self.M,dtype=object)
         self.initialize_grid()
+        self.set_initial_condition()
 
     def initialize_grid(self):
         for i in range(self.M[0]):
@@ -86,10 +89,12 @@ class Block:
         self.grid[i][j][k].topArea = self.grid[i][j][k].bottomArea
         self.grid[i][j][k].volume = dX[0]*dX[1]*dX[2]
 
-    def set_initial_condition(self,initial_condition):
+    def set_initial_condition(self):
        
-        if (initial_condition == "Gaussian Bump"):
-          self.Gaussian_Bump()
+        if (self.IC == "Gaussian Bump"):
+            self.Gaussian_Bump()
+        elif (self.IC == "Toro 1D"):
+            self.Toro_1D()
         else:
            raise Exception("Initial condition not yet implemented")
        
@@ -108,7 +113,7 @@ class Block:
         if not np.issubdtype(M.dtype, np.integer):
             raise TypeError("Block: M array is not integer array")
 
-        if order != type(int()) and x < 1:
+        if order != type(int()) and order < 1:
             raise ValueError("Block: order must be positive integer")
         
     def Gaussian_Bump(self):
@@ -122,7 +127,20 @@ class Block:
                         self.grid[i][j][k].u = np.exp(-1.0/(1-X.dot(X)))/np.exp(-1.0)
                     else:
                         self.grid[i][j][k].u = 0.0
-                       
+
+    def Toro_1D(self):
+        # 1D Initial condition found in Toro's text
+        for i in range(self.M[0]):
+            for j in range(self.M[1]):
+                for k in range(self.M[2]):
+                    X = self.grid[i][j][k].X 
+                    if(X[0]<= 0.5):
+                        self.grid[i][j][k].u = -0.5
+                    elif(X[0]>=1):
+                        self.grid[i][j][k].u = 0.0
+                    else:
+                        self.grid[i][j][k].u = 1
+                    
     def evaluate_residual(self):
         if (self.order == 1):
             self.clear_old_residual()
@@ -209,6 +227,94 @@ class Block:
                 for j in range(Ngc, self.M[1] - Ngc):
                     self.grid[i][j][i1].u = self.grid[i][j][i1+1].u
                     self.grid[i][j][i2].u = self.grid[i][j][i2-1].u
+    
+    def max_time_step(self,CFL):
+
+        max_time_step = 1000000
+
+        Ngc = self.NGc/2
+        # Loop from 1st inner cell to last inner cell in x
+        #           1st inner cell to last inner cell in y
+        #           1st inner cell to last inner cell in z.
+        for i in range(Ngc, self.M[0] - Ngc): 
+            for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    wave_speed = abs(self.grid[i][j][k].u)
+                    dt = np.min(self.grid[i][j][k].dX/wave_speed)
+                    max_time_step = min(max_time_step,dt)
+
+
+        return max_time_step*CFL
+
+    def update_solution(self,dt):
+        
+        Ngc = self.NGc/2
+        # Loop from 1st inner cell to last inner cell in x
+        #           1st inner cell to last inner cell in y
+        #           1st inner cell to last inner cell in z.
+        for i in range(Ngc, self.M[0] - Ngc): 
+            for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    self.grid[i][j][k].u = self.grid[i][j][k].u + dt*self.grid[i][j][k].dudt
+
+class Solver:
+
+    def __init__(self,IPs):
+
+        self.IPs = IPs
+        self.solutionBlock = Block(IPs)
+        self.t = 0.0
+
+    def max_time_step(self):
+        CFL = self.IPs["CFL"]
+        T = self.IPs["Maximum Time"]
+        dt = self.solutionBlock.max_time_step(CFL)
+        dt = min(dt, T-self.t)
+
+        return dt
+
+    def time_integrate(self):
+
+        while self.t < self.IPs["Maximum Time"]:
+            dt = self.max_time_step()
+            if self.IPs["Time Integration Order"] == 1:
+                self.evaluate_residual()
+                self.explicit_euler(dt)
+            else:
+                raise NotImplementedError("time integration not implemented for this order")
+            self.t = self.t + dt
+
+    def explicit_euler(self,dt):
+        # u(n+1) = u(n) + dt*R
+        self.Block.update_solution(dt)
+
+class Plotter:
+
+    @staticmethod
+    def plot1D(Block,direction):
+        Ngc = Block.NGc/2
+        I = Block.M / 2
+        u = np.zeros(Block.M[direction] - Block.NGc)
+        x = np.zeros(Block.M[direction] - Block.NGc)
+            
+        # Loop from 1st inner cell to last inner cell
+        for i in range(Ngc, Block.M[direction] - Ngc):
+            if direction == 0:
+                u[i] = Block.grid[i][I[1]][I[2]].u
+                x[i] = Block.grid[i][I[1]][I[2]].X[0]
+
+            if direction == 1:
+                u[i] = Block.grid[I[0]][i][I[2]].u
+                x[i] = Block.grid[I[0]][i][I[2]].X[1]
+
+            if direction == 3:
+                u[i] = Block.grid[I[0]][I[1]][i].u
+                x[i] = Block.grid[I[0]][I[1]][i].X[2]
+    
+        plt.plot(x,u)
+        plt.show()
+
+
 
 # class InputParameters:
 
