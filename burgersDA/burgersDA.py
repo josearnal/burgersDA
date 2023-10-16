@@ -15,7 +15,7 @@ class Cell:
         self.dX = np.zeros(3) # Dimensions of cell
         self.Ainv = np.zeros((3,3)) # Inverse of least squares LHS matrix
         self.eastArea = 0.0
-        self.westtArea = 0.0
+        self.westArea = 0.0
         self.northArea = 0.0
         self.southArea = 0.0
         self.bottomArea = 0.0
@@ -73,9 +73,9 @@ class Block:
 
     def set_mesh_properties(self,i,j,k):
         # Account for ghost cells
-        I = i - self.NGc/2
-        J = j - self.NGc/2
-        K = k - self.NGc/2
+        I = i - self.NGc//2
+        J = j - self.NGc//2
+        K = k - self.NGc//2
 
         dX = self.L/(self.M - self.NGc)
         self.grid[i][j][k].dX = dX
@@ -130,6 +130,7 @@ class Block:
 
     def Toro_1D(self):
         # 1D Initial condition found in Toro's text
+
         for i in range(self.M[0]):
             for j in range(self.M[1]):
                 for k in range(self.M[2]):
@@ -151,7 +152,7 @@ class Block:
 
     def fluxes_order1(self):
         
-        Ngc = self.NGc/2
+        Ngc = self.NGc//2
         # Loop from 1st inner cell to first ghost cell in x
         #           1st inner cell to first ghost cell in y
         #           1st inner cell to lfirst ghost cell in z.
@@ -195,7 +196,7 @@ class Block:
 
     def clear_old_residual(self):
 
-        Ngc = self.NGc/2
+        Ngc = self.NGc//2
         # Loop from 1st inner cell to first ghost cell in x
         #           1st inner cell to first ghost cell in y
         #           1st inner cell to lfirst ghost cell in z.
@@ -207,22 +208,22 @@ class Block:
     def apply_BCs_order1(self):
         # Constant extrapolation
 
-        Ngc = self.NGc/2
+        Ngc = self.NGc//2
         i1 = Ngc - 1 # first ghost index
         
-        i2  = self.M[0] - NGc # last ghost index
+        i2  = self.M[0] - Ngc # last ghost index
         for j in range(Ngc, self.M[1] - Ngc):
                 for k in range(Ngc, self.M[2] - Ngc):
                     self.grid[i1][j][k].u = self.grid[i1+1][j][k].u
                     self.grid[i2][j][k].u = self.grid[i2-1][j][k].u
 
-        i2  = self.M[1] - NGc # last ghost index
+        i2  = self.M[1] - Ngc # last ghost index
         for i in range(Ngc, self.M[0] - Ngc):
                 for k in range(Ngc, self.M[2] - Ngc):
                     self.grid[i][i1][k].u = self.grid[i][i1+1][k].u
                     self.grid[i][i2][k].u = self.grid[i][i2-1][k].u
 
-        i2  = self.M[2] - NGc # last ghost index
+        i2  = self.M[2] - Ngc # last ghost index
         for i in range(Ngc, self.M[0] - Ngc):
                 for j in range(Ngc, self.M[1] - Ngc):
                     self.grid[i][j][i1].u = self.grid[i][j][i1+1].u
@@ -232,7 +233,8 @@ class Block:
 
         max_time_step = 1000000
 
-        Ngc = self.NGc/2
+        Ngc = self.NGc//2
+
         # Loop from 1st inner cell to last inner cell in x
         #           1st inner cell to last inner cell in y
         #           1st inner cell to last inner cell in z.
@@ -248,7 +250,7 @@ class Block:
 
     def update_solution(self,dt):
         
-        Ngc = self.NGc/2
+        Ngc = self.NGc//2
         # Loop from 1st inner cell to last inner cell in x
         #           1st inner cell to last inner cell in y
         #           1st inner cell to last inner cell in z.
@@ -276,9 +278,10 @@ class Solver:
     def time_integrate(self):
 
         while self.t < self.IPs["Maximum Time"]:
+            print(self.t)
             dt = self.max_time_step()
             if self.IPs["Time Integration Order"] == 1:
-                self.evaluate_residual()
+                self.solutionBlock.evaluate_residual()
                 self.explicit_euler(dt)
             else:
                 raise NotImplementedError("time integration not implemented for this order")
@@ -286,30 +289,30 @@ class Solver:
 
     def explicit_euler(self,dt):
         # u(n+1) = u(n) + dt*R
-        self.Block.update_solution(dt)
+        self.solutionBlock.update_solution(dt)
 
 class Plotter:
 
     @staticmethod
     def plot1D(Block,direction):
-        Ngc = Block.NGc/2
-        I = Block.M / 2
+        Ngc = Block.NGc//2
+        I = Block.M // 2
         u = np.zeros(Block.M[direction] - Block.NGc)
         x = np.zeros(Block.M[direction] - Block.NGc)
             
         # Loop from 1st inner cell to last inner cell
         for i in range(Ngc, Block.M[direction] - Ngc):
             if direction == 0:
-                u[i] = Block.grid[i][I[1]][I[2]].u
-                x[i] = Block.grid[i][I[1]][I[2]].X[0]
+                u[i-Ngc] = Block.grid[i][I[1]][I[2]].u
+                x[i-Ngc] = Block.grid[i][I[1]][I[2]].X[0]
 
             if direction == 1:
-                u[i] = Block.grid[I[0]][i][I[2]].u
-                x[i] = Block.grid[I[0]][i][I[2]].X[1]
+                u[i-Ngc] = Block.grid[I[0]][i][I[2]].u
+                x[i-Ngc] = Block.grid[I[0]][i][I[2]].X[1]
 
             if direction == 3:
-                u[i] = Block.grid[I[0]][I[1]][i].u
-                x[i] = Block.grid[I[0]][I[1]][i].X[2]
+                u[i-Ngc] = Block.grid[I[0]][I[1]][i].u
+                x[i-Ngc] = Block.grid[I[0]][I[1]][i].X[2]
     
         plt.plot(x,u)
         plt.show()
