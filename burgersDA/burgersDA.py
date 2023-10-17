@@ -21,6 +21,8 @@ class Cell:
         self.bottomArea = 0.0
         self.topArea = 0.0
         self.volume = 0.0
+
+        self.u0 = 0.0 # solution variable at previous time
     
     @staticmethod
     def RiemannFlux(ul,ur):
@@ -31,7 +33,8 @@ class Cell:
             if (s >= 0.0):
                 ustar = ul
             else:
-                ustar = ur
+                ustar = ur # Godunov
+                # return (__class__.flux(ul) + __class__.flux(ur)) # Osher
         else:
             if (ul >= 0.0):
                 ustar = ul
@@ -82,7 +85,7 @@ class Block:
         self.initialize_grid()
         self.set_initial_condition()
         if IPs["Reconstruction Order"] == 2:
-            limiter = IPs["Limiter"]
+            self.limiter_name = IPs["Limiter"]
             self.compute_LS_LHS_inverse()
 
     def initialize_grid(self):
@@ -110,7 +113,6 @@ class Block:
                 for k in range(self.M[2]):
                     self.grid[i][j][k] = Cell()
                     set_mesh_properties(i,j,k)
-
 
     def set_initial_condition(self):
        
@@ -162,6 +164,8 @@ class Block:
         self.apply_BCs()
         if (self.order == 1):
             self.fluxes_order1()
+        elif (self.order == 2):
+            self.fluxes_order2()
         else:
             raise NotImplementedError("residual evaluation not implemented for this order")
         self.compute_residual()
@@ -175,18 +179,14 @@ class Block:
         for i in range(Ngc, self.M[0] - Ngc+1): 
             for j in range(Ngc, self.M[1] - Ngc+1):
                 for k in range(Ngc, self.M[2] - Ngc+1):
+                    u = self.grid[i][j][k].u
                     ul = self.grid[i-1][j][k].u
-                    ur = self.grid[i][j][k].u
-
                     us = self.grid[i][j-1][k].u
-                    un = self.grid[i][j][k].u
-
                     ub = self.grid[i][j][k-1].u
-                    ut = self.grid[i][j][k].u
 
-                    self.grid[i][j][k].f = self.grid[i][j][k].RiemannFlux(ul,ur)
-                    self.grid[i][j][k].g = self.grid[i][j][k].RiemannFlux(us,un)
-                    self.grid[i][j][k].h = self.grid[i][j][k].RiemannFlux(ub,ut)
+                    self.grid[i][j][k].f = self.grid[i][j][k].RiemannFlux(ul,u)
+                    self.grid[i][j][k].g = self.grid[i][j][k].RiemannFlux(us,u)
+                    self.grid[i][j][k].h = self.grid[i][j][k].RiemannFlux(ub,u)
 
     def fluxes_order2(self):
 
@@ -199,18 +199,26 @@ class Block:
         for i in range(Ngc, self.M[0] - Ngc+1): 
             for j in range(Ngc, self.M[1] - Ngc+1):
                 for k in range(Ngc, self.M[2] - Ngc+1):
-                    ul = self.grid[i-1][j][k].u
-                    ur = self.grid[i][j][k].u
+                    u = self.grid[i][j][k].u
+                    X = self.grid[i][j][k].X
+                    dudX = self.grid[i][j][k].dudX
+                    index =[(i-1,j,k), # East
+                            (i,j-1,k), # South
+                            (i,j,k-1)] # Bottom
+                    
+                    
+                    # store reconstructed u at "left" and "right" of each cell interface
+                    ul = np.zeros(3)
+                    ur = np.zeros(3)
+                    for cell in range(3):
+                        dX = (X - self.grid[index[cell]].X)/2.0
+                        ul[cell] = self.grid[index[cell]].u + self.grid[index[cell]].dudX.dot(dX)
+                        ur[cell] = u - dudX.dot(dX)
 
-                    us = self.grid[i][j-1][k].u
-                    un = self.grid[i][j][k].u
 
-                    ub = self.grid[i][j][k-1].u
-                    ut = self.grid[i][j][k].u
-
-                    self.grid[i][j][k].f = self.grid[i][j][k].RiemannFlux(ul,ur)
-                    self.grid[i][j][k].g = self.grid[i][j][k].RiemannFlux(us,un)
-                    self.grid[i][j][k].h = self.grid[i][j][k].RiemannFlux(ub,ut)
+                    self.grid[i][j][k].f = self.grid[i][j][k].RiemannFlux(ul[0],ur[0])
+                    self.grid[i][j][k].g = self.grid[i][j][k].RiemannFlux(ul[1],ur[1])
+                    self.grid[i][j][k].h = self.grid[i][j][k].RiemannFlux(ul[2],ur[2])
 
     def compute_residual(self):
         Ngc = self.NGc//2
@@ -239,30 +247,70 @@ class Block:
                                              +(hl*bA - hr*tA)/v
 
     def apply_BCs(self):
-        # Constant extrapolation
-
         Ngc = self.NGc//2
-        i1 = Ngc - 1 # first ghost index
+        i1 = Ngc - 1 # second ghost index
         
-        i2  = self.M[0] - Ngc # last ghost index
-        for j in range(Ngc, self.M[1] - Ngc):
-                for k in range(Ngc, self.M[2] - Ngc):
-                    self.grid[i1][j][k].u = self.grid[i1+1][j][k].u
-                    self.grid[i2][j][k].u = self.grid[i2-1][j][k].u
+        i2  = self.M[0] - Ngc # semilast ghost index
+        for j in range(self.M[1]):
+                for k in range(self.M[2]):
+                    # Accounts for edges and corners
+                    if j<=Ngc-1:
+                        J = (Ngc-1 - j) + 1
+                    elif j >= self.M[1] - Ngc:
+                        J = j - (self.M[1] - Ngc) - 1
+                    else:
+                        J = 0
+                    if k<=Ngc-1:
+                        K = (Ngc-1 - k) + 1
+                    elif k >= self.M[2] - Ngc:
+                        K = k - (self.M[2] - Ngc) - 1
+                    else:
+                        K = 0
+                    self.grid[i1-1][j][k].u = self.grid[i1+1][j+J][k+K].u
+                    self.grid[i1][j][k].u = self.grid[i1+1][j+J][k+K].u
+                    self.grid[i2][j][k].u = self.grid[i2-1][j+J][k+K].u
+                    self.grid[i2+1][j][k].u = self.grid[i2-1][j+J][k+K].u
 
-        i2  = self.M[1] - Ngc # last ghost index
-        for i in range(Ngc, self.M[0] - Ngc):
-                for k in range(Ngc, self.M[2] - Ngc):
-                    self.grid[i][i1][k].u = self.grid[i][i1+1][k].u
-                    self.grid[i][i2][k].u = self.grid[i][i2-1][k].u
+        i2  = self.M[1] - Ngc # semilast ghost index
+        for i in range(self.M[0]):
+                for k in range(self.M[2]):
+                    if i<=Ngc-1:
+                        I = (Ngc-1 - i) + 1
+                    elif i >= self.M[0] - Ngc:
+                        I = i - (self.M[0] - Ngc) - 1
+                    else:
+                        I = 0
+                    if k<=Ngc-1:
+                        K = (Ngc-1 - k) + 1
+                    elif k >= self.M[2] - Ngc:
+                        K = k - (self.M[2] - Ngc) - 1
+                    else:
+                        K = 0
+                    self.grid[i][i1-1][k].u = self.grid[i+I][i1+1][k+K].u
+                    self.grid[i][i1][k].u = self.grid[i+I][i1+1][k+K].u
+                    self.grid[i][i2][k].u = self.grid[i+I][i2-1][k+K].u
+                    self.grid[i][i2+1][k].u = self.grid[i+I][i2-1][k+K].u
 
-        i2  = self.M[2] - Ngc # last ghost index
-        for i in range(Ngc, self.M[0] - Ngc):
-                for j in range(Ngc, self.M[1] - Ngc):
-                    self.grid[i][j][i1].u = self.grid[i][j][i1+1].u
-                    self.grid[i][j][i2].u = self.grid[i][j][i2-1].u
+        i2  = self.M[2] - Ngc # semilast ghost index
+        for i in range(self.M[0]):
+                for j in range(self.M[1]):
+                    if i<=Ngc-1:
+                        I = (Ngc-1 - i) + 1
+                    elif i >= self.M[0] - Ngc:
+                        I = i - (self.M[0] - Ngc) - 1
+                    else:
+                        I = 0
+                    if j<=Ngc-1:
+                        J = (Ngc-1 - j) + 1
+                    elif j >= self.M[1] - Ngc:
+                        J = j - (self.M[1] - Ngc) - 1
+                    else:
+                        J = 0
+                    self.grid[i][j][i1-1].u = self.grid[i+I][j+J][i1+1].u
+                    self.grid[i][j][i1].u = self.grid[i+I][j+J][i1+1].u
+                    self.grid[i][j][i2].u = self.grid[i+I][j+J][i2-1].u
+                    self.grid[i][j][i2+1].u = self.grid[i+I][j+J][i2-1].u
     
-
     def evaluate_reconstruction(self):
 
         def compute_solution_gradient(i,j,k):
@@ -283,36 +331,42 @@ class Block:
 
 
             self.grid[i][j][k].dudX = self.grid[i][j][k].Ainv@dXdu # Matrix-vector product
-            phi = self.grid[i][j][k].limiter(i,j,k)
-            self.grid[i][j][k].dudX *= phi
+            # self.grid[i][j][k].dudX[0] = (self.grid[i+1][j][k].u - self.grid[i-1][j][k].u)/(self.grid[i+1][j][k].X[0] - self.grid[i-1][j][k].X[0])
+            # self.grid[i][j][k].dudX[1] = (self.grid[i][j+1][k].u - self.grid[i][j+1][k].u)/(self.grid[i][j+1][k].X[1] - self.grid[i][j-1][k].X[1])
+            # self.grid[i][j][k].dudX[2] = (self.grid[i][j][k+1].u - self.grid[i][j][k-1].u)/(self.grid[i][j][k+1].X[2] - self.grid[i][j][k-1].X[2])
+            phi = self.limiter(i,j,k)
+            self.grid[i][j][k].dudX = phi*self.grid[i][j][k].dudX
 
         
         for i in range(1,self.M[0]-1):
             for j in range(1,self.M[1]-1):
                 for k in range(1,self.M[2]-1):
                     compute_solution_gradient(i,j,k)
-            
-            
+                
     def limiter(self,i,j,k):
         
 
         def compute_limiter_fuction(r):
-            def vanleer(r):
-                return 2.0*r/(1+r)
             
-            if (self.limiter == "VanLeer"):
-                vanleer(r)
+            if (self.limiter_name == "VanLeer"):
+                return 2.0*r/(1+r)
+            elif (self.limiter_name == "One"):
+                return 1.0
+            elif (self.limiter_name == "Zero"):
+                return 0.0
             else:
                 raise Exception("Limiter not yet implemented")
             
         def compute_limiter(uq,u,umin,umax):
-            if uq > u:
+            if uq > u + 1e-6:
+                # print('numerator = {}, denominator = {}'.format(umax - u, uq - u))
                 r = (umax - u)/(uq - u)
-            elif uq < u:
+            elif uq + 1e-6 < u:
+                # print('numerator = {}, denominator = {}'.format(umin - u, uq - u))
                 r = (umin - u)/(uq - u)
             else:
                 return 1.0
-            
+            r = max(0,r)
             return compute_limiter_fuction(r)
 
 
@@ -331,23 +385,22 @@ class Block:
         phi = 2.0
         u = self.grid[i][j][k].u
         X = self.grid[i][j][k].X
-        dudx = self.grid[i][j][k].dudx
-        wall_indices = [(i-1,j,k),
-                        (i+1,j,k),
-                        (i,j-1,k),
-                        (i,j+1,k),
-                        (i,j,k-1),
-                        (i,j,k+1)]
+        dudX = self.grid[i][j][k].dudX
+        index = [(i-1,j,k),
+                 (i+1,j,k),
+                 (i,j-1,k),
+                 (i,j+1,k),
+                 (i,j,k-1),
+                 (i,j,k+1)]
 
         for cell in range(6):
-            dX = self.grid[wall_indices[cell]].X - X
+            dX = self.grid[index[cell]].X - X
             dX = dX/2.0
-            uq = u - dudx.dot(dX)
+            uq = u + dudX.dot(dX)
             phi = min(phi,compute_limiter(uq,u,umin,umax))
-        
 
+        return phi
 
-    
     def compute_LS_LHS_inverse(self):
 
         def compute_local_LHS_inverse(i,j,k):
@@ -371,11 +424,6 @@ class Block:
             for j in range(1,self.M[1]-1):
                 for k in range(1,self.M[2]-1):
                     compute_local_LHS_inverse(i,j,k)
-
-
-
-
-
 
     def max_time_step(self,CFL):
 
@@ -408,6 +456,19 @@ class Block:
                 for k in range(Ngc, self.M[2] - Ngc):
                     self.grid[i][j][k].u = self.grid[i][j][k].u + dt*self.grid[i][j][k].dudt
 
+    def store_u0(self):
+        for i in range(self.M[0]): 
+            for j in range(self.M[1]):
+                for k in range(self.M[2]):
+                    self.grid[i][j][k].u0 = self.grid[i][j][k].u
+
+    def average_solution(self):
+        for i in range(self.M[0]): 
+            for j in range(self.M[1]):
+                for k in range(self.M[2]):
+                    self.grid[i][j][k].u = (self.grid[i][j][k].u + self.grid[i][j][k].u0)/2.0
+
+
 class Solver:
 
     def __init__(self,IPs):
@@ -432,6 +493,14 @@ class Solver:
             if self.IPs["Time Integration Order"] == 1:
                 self.solutionBlock.evaluate_residual()
                 self.explicit_euler(dt)
+            elif self.IPs["Time Integration Order"] == 2:
+                self.solutionBlock.store_u0()
+                self.solutionBlock.evaluate_residual()
+                self.explicit_euler(dt)
+                self.solutionBlock.evaluate_residual()
+                self.solutionBlock.average_solution()
+                self.explicit_euler(dt/2.0)
+
             else:
                 raise NotImplementedError("time integration not implemented for this order")
             self.t = self.t + dt
@@ -468,6 +537,66 @@ class Plotter:
         plt.draw()
         plt.pause(0.001)
         input("Press [enter] to continue.")
+
+    @staticmethod
+    def plot2D(Block,direction,extra_index=None,Ngc = 2):
+        # Ngc : Number of ghost cells to include in plot
+        Ngc = 2 - Ngc
+        print(Ngc)
+        I = Block.M // 2
+        u = np.zeros([Block.M[direction[0]] - 2*Ngc, Block.M[direction[1]] - 2*Ngc])
+        x = np.zeros([Block.M[direction[0]] - 2*Ngc, Block.M[direction[1]] - 2*Ngc])
+        y = np.zeros([Block.M[direction[0]] - 2*Ngc, Block.M[direction[1]] - 2*Ngc])
+
+        if extra_index != None:
+            I[0] = extra_index
+            I[1] = extra_index
+            I[2] = extra_index
+            
+        for i in range(Ngc, Block.M[direction[0]] - Ngc):
+            for j in range(Ngc, Block.M[direction[1]] - Ngc):
+                if direction == [0,1]:
+                    index = (i,j,I[2])
+                    u[i-Ngc][j-Ngc]= Block.grid[index].u
+                    x[i-Ngc] = Block.grid[index].X[0]
+                    y[j-Ngc] = Block.grid[index].X[1]
+                
+                if direction == [1,0]:
+                    index = (j,i,I[2])
+                    u[i-Ngc][j-Ngc]= Block.grid[index].u
+                    x[i-Ngc] = Block.grid[index].X[1]
+                    y[j-Ngc] = Block.grid[index].X[0]
+                if direction == [0,2]:
+                    index = (i,I[1],j)
+                    u[i-Ngc][j-Ngc]= Block.grid[index].u
+                    x[i-Ngc] = Block.grid[index].X[0]
+                    y[i-Ngc] = Block.grid[index].X[2]
+
+                if direction == [2,0]:
+                    index = (j,I[1],i)
+                    u[i-Ngc][j-Ngc]= Block.grid[index].u
+                    x[i-Ngc] = Block.grid[index].X[2]
+                    y[i-Ngc] = Block.grid[index].X[0]
+
+                if direction == [1,2]:
+                    index = (I[0],i,j)
+                    u[i-Ngc][j-Ngc]= Block.grid[index].u
+                    x[i-Ngc] = Block.grid[index].X[1]
+                    y[i-Ngc] = Block.grid[index].X[2]
+
+                if direction == [2,1]:
+                    index = (I[0],j,i)
+                    u[i-Ngc][j-Ngc]= Block.grid[index].u
+                    x[i-Ngc] = Block.grid[index].X[2]
+                    y[i-Ngc] = Block.grid[index].X[1]
+        
+        # plt.imshow(u)
+        plt.imshow(np.rot90(u))
+        # plt.show()
+        plt.draw()
+        plt.pause(0.001)
+        input("Press [enter] to continue.")
+
 
 
 # class InputParameters:
