@@ -130,7 +130,6 @@ class Block:
 
         def Toro_1D():
             # 1D Initial condition found in Toro's text
-
             for i in range(self.M[0]):
                 for j in range(self.M[1]):
                     for k in range(self.M[2]):
@@ -143,20 +142,47 @@ class Block:
                             self.grid[i][j][k].u = 1
         
         def Uniform():
-            # 1D Initial condition found in Toro's text
-
             for i in range(self.M[0]):
                 for j in range(self.M[1]):
                     for k in range(self.M[2]):
                         self.grid[i][j][k].u = -0.5
 
+        def ShockBox_2D():
+            for i in range(self.M[0]):
+                for j in range(self.M[1]):
+                    for k in range(self.M[2]):
+                        X = self.grid[i][j][k].X 
+                        if(X[0]<= 0.25 and X[1]<= 0.25):
+                            self.grid[i][j][k].u = 1.0
+                        else:
+                            self.grid[i][j][k].u = 0.0
+
+        def Gaussian_Bump_2D():
+       
+            Xc = self.L/2.0 # center of box
+            X2d = np.zeros(2)
+            for i in range(self.M[0]):
+                for j in range(self.M[1]):
+                    for k in range(self.M[2]):
+                        X = self.grid[i][j][k].X - Xc
+                        X2d[0] = X[0]
+                        X2d[1] = X[1]
+                        if (np.sqrt(X2d.dot(X2d)) < 1.0):
+                            self.grid[i][j][k].u = np.exp(-1.0/(1-X2d.dot(X2d)))/np.exp(-1.0)
+                        else:
+                            self.grid[i][j][k].u = 0.0
+
 
         if (self.IC == "Gaussian Bump"):
             Gaussian_Bump()
+        if (self.IC == "Gaussian Bump 2D"):
+            Gaussian_Bump_2D()
         elif (self.IC == "Toro 1D"):
             Toro_1D()
         elif (self.IC == "Uniform"):
             Uniform()
+        elif (self.IC == "Shock Box 2D"):
+            ShockBox_2D()
         else:
            raise Exception("Initial condition not yet implemented")
                      
@@ -359,10 +385,8 @@ class Block:
             
         def compute_limiter(uq,u,umin,umax):
             if uq > u + 1e-6:
-                # print('numerator = {}, denominator = {}'.format(umax - u, uq - u))
                 r = (umax - u)/(uq - u)
             elif uq + 1e-6 < u:
-                # print('numerator = {}, denominator = {}'.format(umin - u, uq - u))
                 r = (umin - u)/(uq - u)
             else:
                 return 1.0
@@ -542,7 +566,6 @@ class Plotter:
     def plot2D(Block,direction,extra_index=None,Ngc = 2):
         # Ngc : Number of ghost cells to include in plot
         Ngc = 2 - Ngc
-        print(Ngc)
         I = Block.M // 2
         u = np.zeros([Block.M[direction[0]] - 2*Ngc, Block.M[direction[1]] - 2*Ngc])
         x = np.zeros([Block.M[direction[0]] - 2*Ngc, Block.M[direction[1]] - 2*Ngc])
