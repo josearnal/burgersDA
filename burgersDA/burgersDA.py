@@ -49,6 +49,44 @@ class Cell:
     @staticmethod
     def flux(u):
         return 0.5*u*u
+    
+    @staticmethod
+    def RiemannFlux_Adjoint(ul,ur,psi):
+        # Returns dFdul*psi and dFdur*psi
+        # dFdu = du_stardu * dfdu_star
+
+        # Solves exact riemann problem for burgers equation
+        if (ul > ur):
+            s = 0.5*(ul+ur)
+            if (s >= 0.0):
+                ustar = ul
+                dFdustar = ustar*psi
+                dFdul = dFdustar
+                dFdur = 0.0
+            else:
+                ustar = ur 
+                dFdustar = ustar*psi
+                dFdul = 0.0
+                dFdur = dFdustar
+        else:
+            if (ul >= 0.0):
+                ustar = ul
+                dFdustar = ustar*psi
+                dFdul = dFdustar
+                dFdur = 0.0
+            elif(ur <= 0.0):
+                ustar = ur
+                dFdustar = ustar*psi
+                dFdul = 0.0
+                dFdur = dFdustar
+            else:
+                dFdul = 0.0
+                dFdur = 0.0
+
+        return dFdul,dFdur
+
+    
+    
 
 class Block:
     
