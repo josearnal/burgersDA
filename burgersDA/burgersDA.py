@@ -10,7 +10,7 @@ class Cell:
         self.h = 0.0 # z flux at Bottom face
         self.dudX = np.zeros(3) # solution gradient
         self.dudt = 0.0 # solution rate of change
-        self.phi = 0.0 # Limiter
+        # self.phi = 0.0 # Limiter
         self.X = np.zeros(3) # Cell centroid
         self.dX = np.zeros(3) # Dimensions of cell
         self.Ainv = np.zeros((3,3)) # Inverse of least squares LHS matrix
@@ -23,7 +23,13 @@ class Cell:
         self.volume = 0.0
 
         self.u0 = 0.0 # solution variable at previous time
-    
+
+
+        self.q = 0.0 # solution adjoint
+        self.dfdu = [0.0,0.0] # derivative of f with ul and ur
+        self.dgdu = [0.0,0.0] # derivative of g with ul and ur
+        self.dhdu = [0.0,0.0] # derivative of h with ul and ur
+  
     @staticmethod
     def RiemannFlux(ul,ur):
 
@@ -233,6 +239,14 @@ class Block:
         else:
             raise NotImplementedError("residual evaluation not implemented for this order")
         self.compute_residual()
+
+    def evaluate_residual_Adjoint(self):
+        self.apply_BCs()
+        if (self.order == 1):
+            self.fluxes_order1_Adjoint()
+            self.compute_residual_order1_Adjoint()
+        else:
+            raise NotImplementedError("residual evaluation not implemented for this order")
 
     def fluxes_order1(self):
         
@@ -529,6 +543,58 @@ class Block:
             for j in range(self.M[1]):
                 for k in range(self.M[2]):
                     self.grid[i][j][k].u = (self.grid[i][j][k].u + self.grid[i][j][k].u0)/2.0
+
+    def fluxes_order1_Adjoint(self):
+        Ngc = self.NGc//2
+        # Loop from 1st inner cell to first ghost cell in x
+        #           1st inner cell to first ghost cell in y
+        #           1st inner cell to lfirst ghost cell in z.
+        for i in range(Ngc, self.M[0] - Ngc+1): 
+            for j in range(Ngc, self.M[1] - Ngc+1):
+                for k in range(Ngc, self.M[2] - Ngc+1):
+                    v = self.grid[i][j][k].volume
+                    eA = self.grid[i][j][k].eastArea
+                    sA = self.grid[i][j][k].southArea
+                    bA = self.grid[i][j][k].bottomArea
+
+                    u = self.grid[i][j][k].u
+                    ul = self.grid[i-1][j][k].u
+                    us = self.grid[i][j-1][k].u
+                    ub = self.grid[i][j][k-1].u
+                    q  = self.grid[i][j][k].q
+
+                    dq_x = q - self.grid[i-1][j][k].q
+                    dq_y = q - self.grid[i][j-1][k].q
+                    dq_z = q - self.grid[i][j][k-1].q
+
+                    dfdu = [0.0,0.0]
+                    dgdu = [0.0,0.0]
+                    dhdu = [0.0,0.0]
+
+                    dfdu[0],dfdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ul,u,dq_x)*eA/v
+                    dgdu[0],dgdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(us,u,dq_y)*sA/v
+                    dhdu[0],dhdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ub,u,dq_z)*bA/v
+
+                    self.grid[i][j][k].dfdu = dfdu
+                    self.grid[i][j][k].dgdu = dgdu
+                    self.grid[i][j][k].dhdu = dhdu
+    
+    def compute_residual_order1_Adjoint(self):
+        Ngc = self.NGc//2
+        for i in range(Ngc, self.M[0] - Ngc): 
+            for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    dfr = self.grid[i][j][k].dfdu[1]
+                    dfl = self.grid[i+1][j][k].dfdu[0]
+                    dgr = self.grid[i][j][k].dgdu[1]
+                    dgl = self.grid[i][j+1][k].dgdu[0]
+                    dhr = self.grid[i][j][k].dhdu[1]
+                    dhl = self.grid[i][j][k+1].dhdu[0]
+
+
+                    self.grid[i][j][k].dqdt = dfr + dfl \
+                                            + dgr + dgl \
+                                            + dhr + dhl
 
 
 class Solver:

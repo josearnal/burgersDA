@@ -130,33 +130,43 @@ class Block_test(Block):
                 for k in range(Ngc, self.M[2] - Ngc):
                     self.grid[i][j][k].u = u[i][j][k]
 
-    def get_fluxes(self):
+    def get_residual(self):
         Ngc = self.NGc//2
-        # Loop from 1st inner cell to first ghost cell in x
-        #           1st inner cell to first ghost cell in y
-        #           1st inner cell to lfirst ghost cell in z.
-        F = np.zeros([self.M[0] - self.NGc, self.M[1] - self.NGc, self.M[2] - self.NGc,3])
-        for i in range(Ngc, self.M[0] - Ngc+1): 
-            for j in range(Ngc, self.M[1] - Ngc+1):
-                for k in range(Ngc, self.M[2] - Ngc+1):
-                    f=self.grid[i][j][k].f
-                    g=self.grid[i][j][k].g
-                    h=self.grid[i][j][k].h
-
-                    F[i][j][k][0] = f
-                    F[i][j][k][1] = g
-                    F[i][j][k][2] = h
-
-        return F
-
-    def fluxes_order1(self,u):
-        self.set(u)
-        super(Block_test, self).apply_BCs()
-        super(Block_test, self).fluxes_order1()
-        F = self.get_fluxes
-        return F
+        # Loop from 1st inner cell to last inner cell in x
+        #           1st inner cell to last inner cell in y
+        #           1st inner cell to last inner cell in z.
+        R = np.zeros([self.M[0] - self.NGc, self.M[1] - self.NGc, self.M[2] - self.NGc])
+        for i in range(Ngc, self.M[0] - Ngc): 
+            for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    dudt=self.grid[i][j][k].dudt
+                    R[i][j][k] = dudt
+        return R
     
-    # def fluxes_order1_Adjoint(self,ur):
+    def get_residual_Adjoint(self):
+        Ngc = self.NGc//2
+        # Loop from 1st inner cell to last inner cell in x
+        #           1st inner cell to last inner cell in y
+        #           1st inner cell to last inner cell in z.
+        dR = np.zeros([self.M[0] - self.NGc, self.M[1] - self.NGc, self.M[2] - self.NGc])
+        for i in range(Ngc, self.M[0] - Ngc): 
+            for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    dqdt=self.grid[i][j][k].dqdt
+                    dR[i][j][k] = dqdt
+        return dR
+
+    def evaluate_residual(self,u):
+        self.set(u)
+        super(Block_test, self).evaluate_residual()
+        R = self.get_residual()
+        return R
+    
+    def evaluate_residual_Adjoint(self,u):
+        self.set(u)
+        super(Block_test, self).evaluate_residual_Adjoint()
+        dR = self.get_residual_Adjoint()
+        return dR
 
 
 
