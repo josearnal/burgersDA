@@ -584,6 +584,59 @@ class Block:
                     self.grid[i][j][k].dgdu = dgdu
                     self.grid[i][j][k].dhdu = dhdu
 
+
+    def fluxes_order2_Adjoint(self):
+
+        self.evaluate_reconstruction()
+        Ngc = self.NGc//2
+        # Loop from 1st inner cell to first ghost cell in x
+        #           1st inner cell to first ghost cell in y
+        #           1st inner cell to lfirst ghost cell in z.
+        for i in range(Ngc, self.M[0] - Ngc+1): 
+            for j in range(Ngc, self.M[1] - Ngc+1):
+                for k in range(Ngc, self.M[2] - Ngc+1):
+                    v = self.grid[i][j][k].volume
+                    eA = self.grid[i][j][k].eastArea
+                    sA = self.grid[i][j][k].southArea
+                    bA = self.grid[i][j][k].bottomArea
+
+                    u = self.grid[i][j][k].u
+                    X = self.grid[i][j][k].X
+                    dudX = self.grid[i][j][k].dudX
+                    index =[(i-1,j,k), # East
+                            (i,j-1,k), # South
+                            (i,j,k-1)] # Bottom
+                    
+                    # store reconstructed u at "left" and "right" of each cell interface
+                    ul = np.zeros(3)
+                    ur = np.zeros(3)
+                    for cell in range(3):
+                        dX = (X - self.grid[index[cell]].X)/2.0
+                        ul[cell] = self.grid[index[cell]].u + self.grid[index[cell]].dudX.dot(dX)
+                        ur[cell] = u - dudX.dot(dX)
+                    
+                    q  = self.grid[i][j][k].q
+                    dq_x = q - self.grid[i-1][j][k].q
+                    dq_y = q - self.grid[i][j-1][k].q
+                    dq_z = q - self.grid[i][j][k-1].q
+
+                    dfdu = [0.0,0.0]
+                    dgdu = [0.0,0.0]
+                    dhdu = [0.0,0.0]
+
+                    dfdu[0],dfdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ul[0],ur[0],dq_x)
+                    dgdu[0],dgdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ul[1],ur[1],dq_y)
+                    dhdu[0],dhdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ul[2],ur[2],dq_z)
+
+                    # multiply each element by A/v
+                    dfdu = [df*eA/v for df in dfdu]
+                    dgdu = [dg*sA/v for dg in dgdu]
+                    dhdu = [dh*bA/v for dh in dhdu]
+
+                    self.grid[i][j][k].dfdu = dfdu
+                    self.grid[i][j][k].dgdu = dgdu
+                    self.grid[i][j][k].dhdu = dhdu
+
     
     def compute_residual_order1_Adjoint(self):
         Ngc = self.NGc//2
@@ -613,7 +666,157 @@ class Block:
                         self.grid[i][j][k].dqdt+= self.grid[i][j][k].dhdu[0]
                     if k == self.M[2] - Ngc - 1:
                         self.grid[i][j][k].dqdt+= self.grid[i][j][k+1].dhdu[1]
+
+    def compute_residual_order2_Adjoint(self):
+        ## LIMIER IGNORED FOR NOW, IMPLEMENT LATER ##
+
+        def apply_BC_Adjoint(self):
+            # Computes residual adjoint stuff on boundaries
+            # Could have included checks in main function, 
+            # but this implementation is cleaner (though slower)
+
+            Ngc = self.NGc//2
+            # East - West boundaries
+            for i in [Ngc-1,Ngc,self.M[1] - Ngc-1, self.M[1] - Ngc]:
+                for j in range(Ngc, self.M[1] - Ngc):
+                    for k in range(Ngc, self.M[2] - Ngc):
+                        I_dem = [i][j][k]
+                        self.grid[i][j][k].dqdt = 0.0
+                        i_start = 0
+                        i_end = 0
+                        j_start = 0
+                        j_end = 0
+                        k_start = 0
+                        k_end = 0
+                        if i == Ngc:
+                            i_start = 1
+                        if i == self.M[0] - Ngc - 1:
+                            i_end = -1
+                        if j == Ngc:
+                            j_start = 1
+                        if j == self.M[1] - Ngc - 1:
+                            j_end = -1
+                        if k == Ngc:
+                            k_start = 1
+                        if k == self.M[2] - Ngc - 1:
+                            k_end = -1
+
+
+                    # East ghost cells
+
+                    # First cells
+
+                    # Last cells
+
+                    # West ghost cells
+
+
+
+        def compute_solution_gradient_Adjoint(I_num, I_dem):
+            # I_num= [i,j,k] of 'numerator'
+            # I_dem= [i,j,k] of 'denominator'
+            # outputs dg_Inum / du_Idem
+            X = self.grid[tuple(I_num)].X
+            if I_num == I_dem:
+                i = I_num[0]
+                j = I_num[1]
+                k = I_num[2]
+                dRHSdu = np.zeros(3)
+                # Loop through 26 neighboring cells
+                for I in [-1, 0, 1]: # i coordinate
+                    for J in [-1, 0, 1]: # j coordinate
+                        for K in [-1, 0, 1]: # k coordinate
+                            if (I ==0 and J ==0 and K ==0): # skip
+                                pass
+                            else:
+                                dX = self.grid[i+I][j+J][k+K].X - X
+                                dRHSdu += -dX
+
+            else:
+                dRHSdu = self.grid[tuple(I_dem)].X - X
+
+            return self.grid[tuple(I_num)].Ainv@dRHSdu 
+        
+        # Algorithm unnecessarily redoes calculation, could optimize trivially in future 
+        Ngc = self.NGc//2
+        for i in range(Ngc, self.M[0] - Ngc): 
+            for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    I_dem = [i][j][k]
+                    self.grid[i][j][k].dqdt = 0.0
+                    i_start = 0
+                    i_end = 0
+                    j_start = 0
+                    j_end = 0
+                    k_start = 0
+                    k_end = 0
+                    if i == Ngc:
+                        i_start = 1
+                    if i == self.M[0] - Ngc - 1:
+                        i_end = -1
+                    if j == Ngc:
+                        j_start = 1
+                    if j == self.M[1] - Ngc - 1:
+                        j_end = -1
+                    if k == Ngc:
+                        k_start = 1
+                    if k == self.M[2] - Ngc - 1:
+                        k_end = -1
                     
+                    # store reconstruction derivatives
+                    dgdu = np.zeros([4,4,4,3])
+                    for I in [-1,0,1]: # i coordinate
+                        for J in [-1,0,1]: # j coordinate
+                            for K in [-1,0,1]: # k coordinate
+                                    I_num = [i+I][j+J][k+K]
+                                    dgdu[I+1][J+1][K+1][:] = compute_solution_gradient_Adjoint(I_num, I_dem)
+                                    if I_num == I_dem:
+                                        dgdu[I+1][J+1][K+1][:] += np.ones(3)
+
+                    for I in range(-1 + i_start, 3 + i_end): # i coordinate
+                        for J in range(-1 + j_start, 2 + j_end): # j coordinate
+                            for K in range(-1 + k_start, 2 + k_end): # k coordinate
+                                dX = (self.grid[i+I][j+J][k+K].X - self.grid[i+I-1][j+J][k+K].X) / 2.0
+                                # ul = u[i-1] + dx*phi[i-1]*g[i-1]
+                                # ur = u[i]   - dx*phi[i  ]*g[i  ]
+                                # I_num_l = [i+I-1][j+J][k+K]
+                                # I_num_r = [i+I][j+J][k+K]
+                                # duldu = compute_solution_gradient_Adjoint(I_num_l, I_dem).dot(dX)
+                                # durdu = -compute_solution_gradient_Adjoint(I_num_r, I_dem).dot(dX)
+                                # if (I_num_l == I_dem):
+                                #     duldu += 1.0
+                                # elif(I_num_l == I_dem):
+                                #     durdu += 1.0
+
+                                duldu = dgdu[i+I+1-1][j+J+1][k+K+1][:].dot(dX)
+                                durdu = -dgdu[i+I+1][j+J+1][k+K+1][:].dot(dX)
+
+                                self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dfdu[0]
+                                self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dfdu[1]
+
+
+                    for I in range(-1 + i_start, 2 + i_end): # i coordinate
+                        for J in range(-1 + j_start, 3 + j_end): # j coordinate
+                            for K in range(-1 + k_start, 2 + k_end): # k coordinate
+                                dX = (self.grid[i+I][j+J][k+K].X - self.grid[i+I][j+J-1][k+K].X) / 2.0
+                                duldu = dgdu[i+I+1][j+J+1-1][k+K+1][:].dot(dX)
+                                durdu = -dgdu[i+I+1][j+J+1][k+K+1][:].dot(dX)
+
+                                self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dgdu[0]
+                                self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dgdu[1]
+                    
+
+                    for I in range(-1 + i_start, 2 + i_end): # i coordinate
+                        for J in range(-1 + j_start, 2 + j_end): # j coordinate
+                            for K in range(-1 + k_start, 3 + k_end): # k coordinate
+                                dX = (self.grid[i+I][j+J][k+K].X - self.grid[i+I][j+J][k+K-1].X) / 2.0
+                                duldu = dgdu[i+I+1][j+J+1][k+K+1-1][:].dot(dX)
+                                durdu = -dgdu[i+I+1][j+J+1][k+K+1][:].dot(dX)
+
+                                self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dhdu[0]
+                                self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dhdu[1]
+
+                                
 
 
 class Solver:
