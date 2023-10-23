@@ -47,7 +47,7 @@ class Cell:
             elif(ur <= 0.0):
                 ustar = ur
             else:
-                ustar = 0.0
+                ustar = 0
             
     
         return __class__.flux(ustar)
@@ -183,7 +183,7 @@ class Block:
                         elif(X[0]>=1):
                             self.grid[i][j][k].u = 0.0
                         else:
-                            self.grid[i][j][k].u = 1
+                            self.grid[i][j][k].u = 1.0
         
         def Uniform():
             for i in range(self.M[0]):
@@ -219,7 +219,7 @@ class Block:
 
         if (self.IC == "Gaussian Bump"):
             Gaussian_Bump()
-        if (self.IC == "Gaussian Bump 2D"):
+        elif (self.IC == "Gaussian Bump 2D"):
             Gaussian_Bump_2D()
         elif (self.IC == "Toro 1D"):
             Toro_1D()
@@ -571,13 +571,19 @@ class Block:
                     dgdu = [0.0,0.0]
                     dhdu = [0.0,0.0]
 
-                    dfdu[0],dfdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ul,u,dq_x)*eA/v
-                    dgdu[0],dgdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(us,u,dq_y)*sA/v
-                    dhdu[0],dhdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ub,u,dq_z)*bA/v
+                    dfdu[0],dfdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ul,u,dq_x)
+                    dgdu[0],dgdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(us,u,dq_y)
+                    dhdu[0],dhdu[1] = self.grid[i][j][k].RiemannFlux_Adjoint(ub,u,dq_z)
+
+                    # multiply each element by A/v
+                    dfdu = [df*eA/v for df in dfdu]
+                    dgdu = [dg*sA/v for dg in dgdu]
+                    dhdu = [dh*bA/v for dh in dhdu]
 
                     self.grid[i][j][k].dfdu = dfdu
                     self.grid[i][j][k].dgdu = dgdu
                     self.grid[i][j][k].dhdu = dhdu
+
     
     def compute_residual_order1_Adjoint(self):
         Ngc = self.NGc//2
@@ -591,10 +597,23 @@ class Block:
                     dhr = self.grid[i][j][k].dhdu[1]
                     dhl = self.grid[i][j][k+1].dhdu[0]
 
-
                     self.grid[i][j][k].dqdt = dfr + dfl \
                                             + dgr + dgl \
                                             + dhr + dhl
+                    
+                    if i == Ngc:
+                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dfdu[0]
+                    if i == self.M[0] - Ngc - 1:
+                        self.grid[i][j][k].dqdt+= self.grid[i+1][j][k].dfdu[1]
+                    if j == Ngc:
+                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dgdu[0]
+                    if j == self.M[1] - Ngc - 1:
+                        self.grid[i][j][k].dqdt+= self.grid[i][j+1][k].dgdu[1]
+                    if k == Ngc:
+                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dhdu[0]
+                    if k == self.M[2] - Ngc - 1:
+                        self.grid[i][j][k].dqdt+= self.grid[i][j][k+1].dhdu[1]
+                    
 
 
 class Solver:
