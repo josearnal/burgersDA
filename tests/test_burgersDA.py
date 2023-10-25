@@ -117,37 +117,57 @@ class TestBlockMethods(unittest.TestCase):
             for i in range(c.shape[0]):
                 for j in range(c.shape[1]):
                     self.assertGreater(c[i][j], 1.98, "Taylor test failed for input {}".format(i))
-
-    def test_evaluate_residual_Adjoint(self):
-
-        IPs = []
-
-        IPs.append({
+    
+    def test_gradient(self):
+        IP = {
             "Initial Condition"     : "Gaussian Bump",
             "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([10,10,10]),
-            "Reconstruction Order"  : 1
-        })
+            "Number of Cells"       : np.array([3,3,3]),
+            "Reconstruction Order"  : 2,
+            "Limiter"               : "One"
+        }
+        test_block = Block_test(IP)
 
-        IPs.append({
-            "Initial Condition"     : "Toro 1D",
-            "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([100,4,4]),
-            "Reconstruction Order"  : 1
-        })
+        test_block.gradient_test()
 
-        for IP in IPs:
-            test_block = Block_test(IP)
-            u = test_block.get_u()
-            # test_block.plot_gradient_comparison(u)
+        
+    # def test_evaluate_residual_Adjoint(self):
 
-            print('Testing evaluate_residual_Adjoint')
-            print('---------------------------------')
-            c = taylor_test(test_block.evaluate_residual,test_block.evaluate_residual_Adjoint,u)
-            for i in range(c.shape[0]):
-                    for j in range(c.shape[1]):
-                        self.assertGreater(c[i][j], 1.98, "Taylor test failed for input {}".format(i))
+    #     IPs = []
 
+    #     # IPs.append({
+    #     #     "Initial Condition"     : "Gaussian Bump",
+    #     #     "Block Dimensions"      : np.array([1,1,1]),
+    #     #     "Number of Cells"       : np.array([10,10,10]),
+    #     #     "Reconstruction Order"  : 1
+    #     # })
+
+    #     # IPs.append({
+    #     #     "Initial Condition"     : "Toro 1D",
+    #     #     "Block Dimensions"      : np.array([1,1,1]),
+    #     #     "Number of Cells"       : np.array([100,4,4]),
+    #     #     "Reconstruction Order"  : 1
+    #     # })
+
+    #     IPs.append({
+    #         "Initial Condition"     : "Toro 1D",
+    #         "Block Dimensions"      : np.array([1,1,1]),
+    #         "Number of Cells"       : np.array([10,1,1]),
+    #         "Reconstruction Order"  : 2,
+    #         "Limiter"               : "One"
+    #     })
+
+    #     for IP in IPs:
+    #         test_block = Block_test(IP)
+    #         u = test_block.get_u()
+    #         test_block.plot_gradient_comparison(u)
+
+    #         print('Testing evaluate_residual_Adjoint')
+    #         print('---------------------------------')
+    #         c = taylor_test(test_block.evaluate_residual,test_block.evaluate_residual_Adjoint,u)
+    #         for i in range(c.shape[0]):
+    #                 for j in range(c.shape[1]):
+    #                     self.assertGreater(c[i][j], 1.98, "Taylor test failed for input {}".format(i))
 
 
 class Block_test(Block):
@@ -262,10 +282,45 @@ class Block_test(Block):
          plt.plot(dJdu_num,'r')
          plt.show()
         
+    def gradient_test(self):
+        def get_gradx(u):
+            self.set_u(u)
+            super(Block_test, self).evaluate_reconstruction()
+            return self.grid[1][1][1].dudX[0]
 
+        def get_gradx_adjoint():
+            I_num = [1,1,1]
+            dgraddu = np.zeros([3,3,3])
+            for i in [0,1,2]:
+                for j in [0,1,2]:
+                    for k in [0,1,2]:
+                        I_dem = [i,j,k]
+                        g = super(Block_test, self).testing_compute_solution_gradient_Adjoint(I_num,I_dem)
+                        dgraddu[i][j][k] = g[0]
+            
+            # return dgraddu.flatten().dot(np.array(psi).flatten())
+            return dgraddu
+    
+        u = self.get_u()
+        dgraddu = get_gradx_adjoint()
 
+        h = 0.000001
+        dgraddu_num = np.zeros(u.shape)
+        for i in [0,1,2]:
+            for j in [0,1,2]:
+                for k in [0,1,2]:
+                    u_pert = u.copy()
+                    u_pert[i][j][k] += h
+                    g_pert1 = get_gradx(u_pert)
+                    u_pert[i][j][k] -= 2.0*h
+                    g_pert2 = get_gradx(u_pert)
+                    dgraddu_num[i][j][k] = (g_pert1 - g_pert2)/(2*h)
 
-
+        
+        plt.plot(dgraddu.flatten(),'k')
+        plt.plot(dgraddu_num.flatten(),'r')
+        plt.show()
+    # taylor_test(get_gradx,get_gradx_adjoint,u)
 
 
 

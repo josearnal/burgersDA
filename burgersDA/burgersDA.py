@@ -231,7 +231,7 @@ class Block:
            raise Exception("Initial condition not yet implemented")
                      
     def evaluate_residual(self):
-        self.apply_BCs()
+        # self.apply_BCs()
         if (self.order == 1):
             self.fluxes_order1()
         elif (self.order == 2):
@@ -241,10 +241,13 @@ class Block:
         self.compute_residual()
 
     def evaluate_residual_Adjoint(self):
-        self.apply_BCs()
+        # self.apply_BCs()
         if (self.order == 1):
             self.fluxes_order1_Adjoint()
             self.compute_residual_order1_Adjoint()
+        elif (self.order == 2):
+            self.fluxes_order2_Adjoint()
+            self.compute_residual_order2_Adjoint()
         else:
             raise NotImplementedError("residual evaluation not implemented for this order")
 
@@ -654,95 +657,274 @@ class Block:
                                             + dgr + dgl \
                                             + dhr + dhl
                     
-                    if i == Ngc:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dfdu[0]
-                    if i == self.M[0] - Ngc - 1:
-                        self.grid[i][j][k].dqdt+= self.grid[i+1][j][k].dfdu[1]
-                    if j == Ngc:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dgdu[0]
-                    if j == self.M[1] - Ngc - 1:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j+1][k].dgdu[1]
-                    if k == Ngc:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dhdu[0]
-                    if k == self.M[2] - Ngc - 1:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k+1].dhdu[1]
+                    #### PUT BACK
+                    # #BCs
+                    # if i == Ngc:
+                    #     self.grid[i][j][k].dqdt+= self.grid[i][j][k].dfdu[0]
+                    # if i == self.M[0] - Ngc - 1:
+                    #     self.grid[i][j][k].dqdt+= self.grid[i+1][j][k].dfdu[1]
+                    # if j == Ngc:
+                    #     self.grid[i][j][k].dqdt+= self.grid[i][j][k].dgdu[0]
+                    # if j == self.M[1] - Ngc - 1:
+                    #     self.grid[i][j][k].dqdt+= self.grid[i][j+1][k].dgdu[1]
+                    # if k == Ngc:
+                    #     self.grid[i][j][k].dqdt+= self.grid[i][j][k].dhdu[0]
+                    # if k == self.M[2] - Ngc - 1:
+                    #     self.grid[i][j][k].dqdt+= self.grid[i][j][k+1].dhdu[1]
 
     def compute_residual_order2_Adjoint(self):
         ## LIMIER IGNORED FOR NOW, IMPLEMENT LATER ##
 
-        def apply_BC_Adjoint(self):
-            # Computes residual adjoint stuff on boundaries
-            # Could have included checks in main function, 
-            # but this implementation is cleaner (though slower)
-
+        def cell_type(i,j,k):
+            index = [i,j,k]
             Ngc = self.NGc//2
-            # East - West boundaries
-            for i in [Ngc-1,Ngc,self.M[1] - Ngc-1, self.M[1] - Ngc]:
-                for j in range(Ngc, self.M[1] - Ngc):
-                    for k in range(Ngc, self.M[2] - Ngc):
-                        I_dem = [i][j][k]
-                        self.grid[i][j][k].dqdt = 0.0
-                        i_start = 0
-                        i_end = 0
-                        j_start = 0
-                        j_end = 0
-                        k_start = 0
-                        k_end = 0
-                        if i == Ngc:
-                            i_start = 1
-                        if i == self.M[0] - Ngc - 1:
-                            i_end = -1
-                        if j == Ngc:
-                            j_start = 1
-                        if j == self.M[1] - Ngc - 1:
-                            j_end = -1
-                        if k == Ngc:
-                            k_start = 1
-                        if k == self.M[2] - Ngc - 1:
-                            k_end = -1
+            i_ghost = self.M[0] - Ngc
+            j_ghost = self.M[1] - Ngc
+            k_ghost = self.M[2] - Ngc
 
+            if 0 in index or i==i_ghost+1 or j==j_ghost+1 or k==k_ghost+1:     # Outermost cells
+                raise IndexError('Error: Gradients not calculated at outer most ghost cells')
+            elif Ngc-1 in index or i==i_ghost or j==j_ghost or k==k_ghost:     # Ghost cells
+                return 'ghost'
+            elif Ngc in index or i==i_ghost-1 or j==j_ghost-1 or k==k_ghost-1: # Boundary cells
+                return 'boundary'
+            else:                                                              # Interior cells
+                return 'interior'
 
-                    # East ghost cells
+        def find_extrapolated(i,j,k):
+            # Returns list of cell indices that are extrapolated from i,j,k
+            extrapolated = [(i,j,k)]
+            Ngc = self.NGc//2
+            i_boundary = self.M[0] - Ngc - 1
+            j_boundary = self.M[1] - Ngc - 1
+            k_boundary = self.M[2] - Ngc - 1
+            east_boundary = False
+            west_boundary = False
+            south_boundary = False
+            north_boundary = False
+            bottom_boundary = False
+            top_boundary = False
+            # Im sure there's a better way to do this
+            # Edges
+            if i == Ngc:                        # East boundary
+                extrapolated.append((i-1,j,k))
+                extrapolated.append((i-2,j,k))
+                east_boundary = True
+            if i == i_boundary:                 # West boundary
+                extrapolated.append((i+1,j,k))
+                extrapolated.append((i+2,j,k))
+                west_boundary = True
+            if j == Ngc:                        # South boundary
+                extrapolated.append((i,j-1,k))
+                extrapolated.append((i,j-2,k))
+                south_boundary = True
+            if j == j_boundary:                 # North boundary
+                extrapolated.append((i,j+1,k))
+                extrapolated.append((i,j+2,k))
+                north_boundary = True
+            if k == Ngc:                        # Bottom boundary
+                extrapolated.append((i,j,k-1))
+                extrapolated.append((i,j,k-2))
+                bottom_boundary = True
+            if k == k_boundary:                 # Top boundary
+                extrapolated.append((i,j,k+1))
+                extrapolated.append((i,j,k+2))
+                top_boundary = True
 
-                    # First cells
+            # Corners
+            if east_boundary and south_boundary:
+                extrapolated.append((i-1,j-1,k))
+                extrapolated.append((i-2,j-1,k))
+                extrapolated.append((i-1,j-2,k))
+                extrapolated.append((i-2,j-2,k))
+            if east_boundary and north_boundary:
+                extrapolated.append((i-1,j+1,k))
+                extrapolated.append((i-2,j+1,k))
+                extrapolated.append((i-1,j+2,k))
+                extrapolated.append((i-2,j+2,k))
+            if east_boundary and bottom_boundary:
+                extrapolated.append((i-1,j,k-1))
+                extrapolated.append((i-2,j,k-1))
+                extrapolated.append((i-1,j,k-2))
+                extrapolated.append((i-2,j,k-2))
+            if east_boundary and top_boundary:
+                extrapolated.append((i-1,j,k+1))
+                extrapolated.append((i-2,j,k+1))
+                extrapolated.append((i-1,j,k+2))
+                extrapolated.append((i-2,j,k+2))
 
-                    # Last cells
+            if west_boundary and south_boundary:
+                extrapolated.append((i+1,j-1,k))
+                extrapolated.append((i+2,j-1,k))
+                extrapolated.append((i+1,j-2,k))
+                extrapolated.append((i+2,j-2,k))
+            if west_boundary and north_boundary:
+                extrapolated.append((i+1,j+1,k))
+                extrapolated.append((i+2,j+1,k))
+                extrapolated.append((i+1,j+2,k))
+                extrapolated.append((i+2,j+2,k))
+            if west_boundary and bottom_boundary:
+                extrapolated.append((i+1,j,k-1))
+                extrapolated.append((i+2,j,k-1))
+                extrapolated.append((i+1,j,k-2))
+                extrapolated.append((i+2,j,k-2))
+            if west_boundary and top_boundary:
+                extrapolated.append((i+1,j,k+1))
+                extrapolated.append((i+2,j,k+1))
+                extrapolated.append((i+1,j,k+2))
+                extrapolated.append((i+2,j,k+2))
 
-                    # West ghost cells
+            if south_boundary and bottom_boundary:
+                extrapolated.append((i,j-1,k-1))
+                extrapolated.append((i,j-2,k-1))
+                extrapolated.append((i,j-1,k-2))
+                extrapolated.append((i,j-2,k-2))
+            if south_boundary and top_boundary:
+                extrapolated.append((i,j-1,k+1))
+                extrapolated.append((i,j-2,k+1))
+                extrapolated.append((i,j-1,k+2))
+                extrapolated.append((i,j-2,k+2))
 
+            if north_boundary and bottom_boundary:
+                extrapolated.append((i,j+1,k-1))
+                extrapolated.append((i,j+2,k-1))
+                extrapolated.append((i,j+1,k-2))
+                extrapolated.append((i,j+2,k-2))
+            if north_boundary and top_boundary:
+                extrapolated.append((i,j+1,k+1))
+                extrapolated.append((i,j+2,k+1))
+                extrapolated.append((i,j+1,k+2))
+                extrapolated.append((i,j+2,k+2))
 
+            # Super corners
+            if east_boundary and south_boundary and bottom_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                                extrapolated.append((i-ii,j-jj,k-kk))                   
+            if east_boundary and south_boundary and top_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                                extrapolated.append((i-ii,j-jj,k+kk))   
+            if east_boundary and north_boundary and bottom_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                                extrapolated.append((i-ii,j+jj,k-kk))   
+            if east_boundary and north_boundary and top_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                                extrapolated.append((i-ii,j+jj,k+kk))
+                                
 
+            if west_boundary and south_boundary and bottom_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                            extrapolated.append((i+ii,j-jj,k-kk))
+            if west_boundary and south_boundary and top_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                            extrapolated.append((i+ii,j-jj,k+kk))
+            if west_boundary and north_boundary and bottom_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                                extrapolated.append((i+ii,j+jj,k-kk))
+            if west_boundary and north_boundary and top_boundary:
+                for ii in [1,2]:
+                    for jj in [1,2]:
+                        for kk in [1,2]:
+                            extrapolated.append((i+ii,j+jj,k+kk))
+            
+            return extrapolated
+            
         def compute_solution_gradient_Adjoint(I_num, I_dem):
             # I_num= [i,j,k] of 'numerator'
             # I_dem= [i,j,k] of 'denominator'
             # outputs dg_Inum / du_Idem
             X = self.grid[tuple(I_num)].X
-            if I_num == I_dem:
-                i = I_num[0]
-                j = I_num[1]
-                k = I_num[2]
-                dRHSdu = np.zeros(3)
-                # Loop through 26 neighboring cells
-                for I in [-1, 0, 1]: # i coordinate
-                    for J in [-1, 0, 1]: # j coordinate
-                        for K in [-1, 0, 1]: # k coordinate
-                            if (I ==0 and J ==0 and K ==0): # skip
-                                pass
-                            else:
-                                dX = self.grid[i+I][j+J][k+K].X - X
-                                dRHSdu += -dX
+            i = I_num[0]
+            j = I_num[1]
+            k = I_num[2]
+            ct = cell_type(i,j,k)
+            dRHSdu = np.zeros(3)
+            # if ct == 'ghost':
+            #     extrapolated = find_extrapolated(I_dem[0],I_dem[1],I_dem[2])
+            #     if tuple(I_num) in extrapolated:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) not in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += -dX
+            #     else:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += dX
 
-            else:
-                dRHSdu = self.grid[tuple(I_dem)].X - X
+            # elif ct == 'boundary':
+            #     extrapolated = find_extrapolated(I_dem[0],I_dem[1],I_dem[2])
+            #     if I_num == I_dem:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) not in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += -dX
+            #     else:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += dX
+
+            # else:
+            if True: # REMOVE #############
+                if I_num == I_dem:
+                    # Loop through 26 neighboring cells
+                    for I in [-1, 0, 1]: # i coordinate
+                        for J in [-1, 0, 1]: # j coordinate
+                            for K in [-1, 0, 1]: # k coordinate
+                                if (I ==0 and J ==0 and K ==0): # skip
+                                    pass
+                                else:
+                                    dX = self.grid[i+I][j+J][k+K].X - X
+                                    dRHSdu += -dX
+                else:
+                    dRHSdu = self.grid[tuple(I_dem)].X - X
 
             return self.grid[tuple(I_num)].Ainv@dRHSdu 
         
         # Algorithm unnecessarily redoes calculation, could optimize trivially in future 
         Ngc = self.NGc//2
+        # Indices of ghost cells
+        i_ghost = self.M[0] - Ngc
+        j_ghost = self.M[1] - Ngc
+        k_ghost = self.M[2] - Ngc
         for i in range(Ngc, self.M[0] - Ngc): 
             for j in range(Ngc, self.M[1] - Ngc):
                 for k in range(Ngc, self.M[2] - Ngc):
-                    I_dem = [i][j][k]
+                    I_dem = [i,j,k]
                     self.grid[i][j][k].dqdt = 0.0
                     i_start = 0
                     i_end = 0
@@ -764,15 +946,17 @@ class Block:
                         k_end = -1
                     
                     # store reconstruction derivatives
-                    dgdu = np.zeros([4,4,4,3])
+                    dgraddu = np.zeros([4,4,4,3])
                     for I in [-1,0,1]: # i coordinate
                         for J in [-1,0,1]: # j coordinate
                             for K in [-1,0,1]: # k coordinate
-                                    I_num = [i+I][j+J][k+K]
-                                    dgdu[I+1][J+1][K+1][:] = compute_solution_gradient_Adjoint(I_num, I_dem)
-                                    if I_num == I_dem:
-                                        dgdu[I+1][J+1][K+1][:] += np.ones(3)
-
+                                        I_num = [i+I,j+J,k+K]
+                                        dgraddu[I+1][J+1][K+1][:] = compute_solution_gradient_Adjoint(I_num, I_dem)
+                                        if I_num == I_dem:
+                                            dgraddu[I+1][J+1][K+1][:] += np.ones(3)
+                    
+                    print('***************dgraddu***********')
+                    print(dgraddu[:][:][:][0])
                     for I in range(-1 + i_start, 3 + i_end): # i coordinate
                         for J in range(-1 + j_start, 2 + j_end): # j coordinate
                             for K in range(-1 + k_start, 2 + k_end): # k coordinate
@@ -788,8 +972,8 @@ class Block:
                                 # elif(I_num_l == I_dem):
                                 #     durdu += 1.0
 
-                                duldu = dgdu[i+I+1-1][j+J+1][k+K+1][:].dot(dX)
-                                durdu = -dgdu[i+I+1][j+J+1][k+K+1][:].dot(dX)
+                                duldu = dgraddu[I+1-1][J+1][K+1][:].dot(dX)
+                                durdu = -dgraddu[I+1][J+1][K+1][:].dot(dX)
 
                                 self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dfdu[0]
                                 self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dfdu[1]
@@ -799,8 +983,8 @@ class Block:
                         for J in range(-1 + j_start, 3 + j_end): # j coordinate
                             for K in range(-1 + k_start, 2 + k_end): # k coordinate
                                 dX = (self.grid[i+I][j+J][k+K].X - self.grid[i+I][j+J-1][k+K].X) / 2.0
-                                duldu = dgdu[i+I+1][j+J+1-1][k+K+1][:].dot(dX)
-                                durdu = -dgdu[i+I+1][j+J+1][k+K+1][:].dot(dX)
+                                duldu = dgraddu[I+1][J+1-1][K+1][:].dot(dX)
+                                durdu = -dgraddu[I+1][J+1][K+1][:].dot(dX)
 
                                 self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dgdu[0]
                                 self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dgdu[1]
@@ -810,14 +994,87 @@ class Block:
                         for J in range(-1 + j_start, 2 + j_end): # j coordinate
                             for K in range(-1 + k_start, 3 + k_end): # k coordinate
                                 dX = (self.grid[i+I][j+J][k+K].X - self.grid[i+I][j+J][k+K-1].X) / 2.0
-                                duldu = dgdu[i+I+1][j+J+1][k+K+1-1][:].dot(dX)
-                                durdu = -dgdu[i+I+1][j+J+1][k+K+1][:].dot(dX)
+                                duldu = dgraddu[I+1][J+1][K+1-1][:].dot(dX)
+                                durdu = -dgraddu[I+1][J+1][K+1][:].dot(dX)
 
                                 self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dhdu[0]
                                 self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dhdu[1]
+    
+    # FOR TESTING, DELETE LATER
+    def testing_compute_solution_gradient_Adjoint(self,I_num, I_dem):
+            # I_num= [i,j,k] of 'numerator'
+            # I_dem= [i,j,k] of 'denominator'
+            # outputs dg_Inum / du_Idem
+            X = self.grid[tuple(I_num)].X
+            i = I_num[0]
+            j = I_num[1]
+            k = I_num[2]
+            #### PUT BACK
+            # ct = cell_type(i,j,k)
+            dRHSdu = np.zeros(3)
+            #### PUT BACK
+            # if ct == 'ghost':
+            #     extrapolated = find_extrapolated(I_dem[0],I_dem[1],I_dem[2])
+            #     if tuple(I_num) in extrapolated:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) not in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += -dX
+            #     else:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += dX
 
-                                
+            # elif ct == 'boundary':
+            #     extrapolated = find_extrapolated(I_dem[0],I_dem[1],I_dem[2])
+            #     if I_num == I_dem:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) not in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += -dX
+            #     else:
+            #         for I in [-1, 0, 1]: # i coordinate
+            #             for J in [-1, 0, 1]: # j coordinate
+            #                 for K in [-1, 0, 1]: # k coordinate
+            #                     if (I ==0 and J ==0 and K ==0): # skip
+            #                         pass
+            #                     else:
+            #                         if (I+i, j+J, k+K) in extrapolated:
+            #                             dX = self.grid[i+I][j+J][k+K].X - X
+            #                             dRHSdu += dX
 
+            # else:
+            if True: # REMOVE #############
+                if I_num == I_dem:
+                    # Loop through 26 neighboring cells
+                    for I in [-1, 0, 1]: # i coordinate
+                        for J in [-1, 0, 1]: # j coordinate
+                            for K in [-1, 0, 1]: # k coordinate
+                                if (I ==0 and J ==0 and K ==0): # skip
+                                    pass
+                                else:
+                                    dX = self.grid[i+I][j+J][k+K].X - X
+                                    dRHSdu += -dX
+                else:
+                    dRHSdu = self.grid[tuple(I_dem)].X - X
+
+            return self.grid[tuple(I_num)].Ainv@dRHSdu
 
 class Solver:
 
