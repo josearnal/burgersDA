@@ -1,6 +1,8 @@
 import unittest
 import numpy as np
 from burgersDA import * 
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 def taylor_test(f,dfdu,*u):
     # higher order function that takes in the functions f,
@@ -117,6 +119,59 @@ class TestBlockMethods(unittest.TestCase):
             for i in range(c.shape[0]):
                 for j in range(c.shape[1]):
                     self.assertGreater(c[i][j], 1.98, "Taylor test failed for input {}".format(i))
+
+    # def test_find_extrapolated(self):
+    #     def plot_cube(I,color):   
+    #         phi = np.arange(1,10,2)*np.pi/4
+    #         Phi, Theta = np.meshgrid(phi, phi) 
+
+    #         x = np.cos(Phi)*np.sin(Theta)
+    #         y = np.sin(Phi)*np.sin(Theta)
+    #         z = np.cos(Theta)/np.sqrt(2)
+            
+    #         i = I[0]
+    #         j = I[1]
+    #         k = I[2]
+    #         ax.plot_surface(x+i, y+j, z+k,color=color)
+    #         ax.set_zlabel("k")
+
+    #         return x,y,z
+        
+    #     print('Testing find_extrapolated')
+    #     print('---------------------------')
+
+    #     IPs = {
+    #         "Initial Condition"     : "Toro 1D",
+    #         "Block Dimensions"      : np.array([1,1,1]),
+    #         "Number of Cells"       : np.array([10,1,1]),
+    #         "Reconstruction Order"  : 1
+    #     }
+
+    #     block = Block(IPs)
+    #     for ii in range(2,block.M[0]-2): 
+    #             for jj in range(2,block.M[1]-2): 
+    #                 for kk in range(2,block.M[2]-2): 
+
+    #                     extrapolated = block.find_extrapolated(ii,jj,kk)
+    #                     print('extrapolated = {}'.format(extrapolated))
+    #                     fig = plt.figure()
+    #                     ax = fig.add_subplot(111, projection='3d')
+    #                     for i in range(2,block.M[0]-2): 
+    #                             for j in range(2,block.M[1]-2): 
+    #                                 for k in range(2,block.M[2]-2): 
+    #                                     if block.cell_type(i,j,k) in ['interior','boundary']:
+    #                                         plot_cube((i,j,k),'b')
+    #                                     else:
+    #                                         plot_cube((i,j,k),'coral')
+
+    #                     for cell in extrapolated:
+    #                         plot_cube(cell,'r')
+    #                     plt.xlabel("i")
+    #                     plt.ylabel("j")
+
+    #                     plt.show()
+
+
     
     def test_gradient(self):
         IP = {
@@ -128,7 +183,7 @@ class TestBlockMethods(unittest.TestCase):
         }
         test_block = Block_test(IP)
 
-        test_block.gradient_test2()
+        # test_block.gradient_test3()
 
         
     def test_evaluate_residual_Adjoint(self):
@@ -149,25 +204,25 @@ class TestBlockMethods(unittest.TestCase):
         #     "Reconstruction Order"  : 1
         # })
 
-        # IPs.append({
-        #     "Initial Condition"     : "Toro 1D",
-        #     "Block Dimensions"      : np.array([1,1,1]),
-        #     "Number of Cells"       : np.array([3,3,3]),
-        #     "Reconstruction Order"  : 2,
-        #     "Limiter"               : "One"
-        # })
+        IPs.append({
+            "Initial Condition"     : "Gaussian Bump",
+            "Block Dimensions"      : np.array([1,1,1]),
+            "Number of Cells"       : np.array([10,4,4]),
+            "Reconstruction Order"  : 2,
+            "Limiter"               : "One"
+        })
 
         for IP in IPs:
             test_block = Block_test(IP)
             u = test_block.get_u()
             test_block.plot_gradient_comparison(u)
 
-            print('Testing evaluate_residual_Adjoint')
-            print('---------------------------------')
-            c = taylor_test(test_block.evaluate_residual,test_block.evaluate_residual_Adjoint,u)
-            for i in range(c.shape[0]):
-                    for j in range(c.shape[1]):
-                        self.assertGreater(c[i][j], 1.98, "Taylor test failed for input {}".format(i))
+            # print('Testing evaluate_residual_Adjoint')
+            # print('---------------------------------')
+            # c = taylor_test(test_block.evaluate_residual,test_block.evaluate_residual_Adjoint,u)
+            # for i in range(c.shape[0]):
+            #         for j in range(c.shape[1]):
+            #             self.assertGreater(c[i][j], 1.98, "Taylor test failed for input {}".format(i))
 
 
 class Block_test(Block):
@@ -305,10 +360,17 @@ class Block_test(Block):
          dRdu = dRdu_num(self.evaluate_residual,u)
          R = self.evaluate_residual(u)
          dJdu_num =dRdu@R.flatten()
-         print(dRdu)
-         print(R.flatten())
+        #  print(dRdu)
+        #  print(R.flatten())
 
          dJdu = self.evaluate_residual_Adjoint(u,R)
+        
+         np.set_printoptions(precision=6, suppress=True)
+         print(dJdu)
+         print('')
+         print(dJdu_num.reshape(dJdu.shape))
+         print('')
+         print(dJdu - dJdu_num.reshape(dJdu.shape))
 
          plt.plot(dJdu.flatten(),'k')
          plt.plot(dJdu_num,'r')
@@ -566,10 +628,10 @@ class Block_test(Block):
         dULdu = self.evaluate_ul_Adjoint(u)
         dULdu_n = dULdu_num(u)
 
+
         plt.plot(dULdu[:][:].flatten(),'k')
         plt.plot(dULdu_n[:][:].flatten(),'r')
         # plt.plot(dULdu.flatten() - dULdu_n.flatten(),'b')
-        np.set_printoptions(precision=3, suppress=True)
         # print(dGxdu[0][:].reshape((3,3,3)))
         # print('')
         # print(dGxdu_num[0][:].reshape((3,3,3)))

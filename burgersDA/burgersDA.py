@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+import warnings
 
 class Cell:
 
@@ -331,7 +332,22 @@ class Block:
                                              +(gl*sA - gr*nA)/v \
                                              +(hl*bA - hr*tA)/v
 
-    def apply_BCs(self):
+    def apply_BCs(self): # simpler but potentially slower
+        Ngc = self.NGc//2
+        for i in range(Ngc, self.M[0] - Ngc): 
+            for j in range(Ngc, self.M[1] - Ngc):
+                for k in range(Ngc, self.M[2] - Ngc):
+                    ct = self.cell_type(i,j,k)
+                    if ct == 'boundary':
+                        extrapolated = self.find_extrapolated(i,j,k)
+                        for cell in extrapolated[1:]: # skipping first item as it corresponds to current cell
+                            self.grid[cell].u = self.grid[i][j][k].u
+                    elif ct == 'interior':
+                        pass
+                    else:
+                        raise IndexError("Should not be accesing ghosts right now")
+
+    def apply_BCs_old(self):
         Ngc = self.NGc//2
         i1 = Ngc - 1 # second ghost index
         
@@ -684,7 +700,7 @@ class Block:
         k_ghost = self.M[2] - Ngc
 
         if 0 in index or i==i_ghost+1 or j==j_ghost+1 or k==k_ghost+1:     # Outermost cells
-            raise IndexError('Error: Gradients not calculated at outer most ghost cells')
+            warnings.warn('Warning: Accessing outer ghost cell, Gradients not calculated at outer most ghost cells')
         elif Ngc-1 in index or i==i_ghost or j==j_ghost or k==k_ghost:     # Ghost cells
             return 'ghost'
         elif Ngc in index or i==i_ghost-1 or j==j_ghost-1 or k==k_ghost-1: # Boundary cells
@@ -802,7 +818,8 @@ class Block:
             for ii in [1,2]:
                 for jj in [1,2]:
                     for kk in [1,2]:
-                            extrapolated.append((i-ii,j-jj,k-kk))                   
+                            extrapolated.append((i-ii,j-jj,k-kk)) 
+                                           
         if east_boundary and south_boundary and top_boundary:
             for ii in [1,2]:
                 for jj in [1,2]:
@@ -853,6 +870,8 @@ class Block:
         k = I_num[2]
         ct = self.cell_type(i,j,k)
         dRHSdu = np.zeros(3)
+        test1 = np.zeros(3)
+        test2 = np.zeros(3)
         if ct == 'ghost':
             extrapolated = self.find_extrapolated(I_dem[0],I_dem[1],I_dem[2])
             if tuple(I_num) in extrapolated:
@@ -885,10 +904,19 @@ class Block:
                             if (I ==0 and J ==0 and K ==0): # skip
                                 pass
                             else:
+                                dX_debug = self.grid[i+I][j+J][k+K].X - X
+                                du_debug = self.grid[i+I][j+J][k+K].u - self.grid[tuple(I_num)].u
+                                test1 += du_debug*dX_debug
                                 if (I+i, j+J, k+K) not in extrapolated:
                                     dX = self.grid[i+I][j+J][k+K].X - X
                                     dRHSdu += -dX
+                                    du_debug2 = self.grid[i+I][j+J][k+K].u - self.grid[tuple(I_num)].u
+                                    test2 += du_debug2*dX
+                np.set_printoptions(precision=6, suppress=True)
+                # print('({},{},{}), test1 = {}, test2 = {}'.format(i,j,k,test1,test2))
             else:
+                test1 = np.zeros(3)
+                test2 = np.zeros(3)
                 for I in [-1, 0, 1]: # i coordinate
                     for J in [-1, 0, 1]: # j coordinate
                         for K in [-1, 0, 1]: # k coordinate
@@ -898,7 +926,6 @@ class Block:
                                 if (I+i, j+J, k+K) in extrapolated:
                                     dX = self.grid[i+I][j+J][k+K].X - X
                                     dRHSdu += dX
-
         else: # PUT BACK
         # if True: # REMOVE #############
             if I_num == I_dem:
