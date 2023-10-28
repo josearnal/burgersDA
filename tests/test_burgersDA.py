@@ -173,7 +173,6 @@ class TestBlockMethods(unittest.TestCase):
     #                     plt.ylabel("j")
 
     #                     plt.show()
-
     
     def test_evaluate_residual_Adjoint(self):
 
@@ -219,7 +218,6 @@ class TestBlockMethods(unittest.TestCase):
             for i in range(c.shape[0]):
                     for j in range(c.shape[1]):
                         self.assertGreater(c[i][j], 1.98, "Taylor test failed for input {}".format(i))
-
 
 class Block_test(Block):
 

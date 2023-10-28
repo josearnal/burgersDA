@@ -92,9 +92,6 @@ class Cell:
 
         return dFdul,dFdur
 
-    
-    
-
 class Block:
     
     def __init__(self,IPs):
@@ -603,7 +600,6 @@ class Block:
                     self.grid[i][j][k].dgdu = dgdu
                     self.grid[i][j][k].dhdu = dhdu
 
-
     def fluxes_order2_Adjoint(self):
 
         self.evaluate_reconstruction()
@@ -655,8 +651,7 @@ class Block:
                     self.grid[i][j][k].dfdu = dfdu
                     self.grid[i][j][k].dgdu = dgdu
                     self.grid[i][j][k].dhdu = dhdu
-
-    
+  
     def compute_residual_order1_Adjoint(self):
         Ngc = self.NGc//2
         for i in range(Ngc, self.M[0] - Ngc): 
@@ -686,7 +681,6 @@ class Block:
                         self.grid[i][j][k].dqdt+= self.grid[i][j][k].dhdu[0]
                     if k == self.M[2] - Ngc - 1:
                         self.grid[i][j][k].dqdt+= self.grid[i][j][k+1].dhdu[1]
-
 
     def cell_type(self,i,j,k):
         index = [i,j,k]
@@ -1031,7 +1025,6 @@ class Block:
                                 self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dhdu[0]
                                 self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dhdu[1]
     
-
 class Solver:
 
     def __init__(self,IPs):
@@ -1158,13 +1151,4 @@ class Plotter:
         plt.draw()
         plt.pause(0.001)
         input("Press [enter] to continue.")
-
-
-
-# class InputParameters:
-
-#     def __init__(self,dictionary):
-#         self.L = dictionary["Block Dimensions"]
-#         self.M = dictionary["Number of Cells"]
-#         self.order = dictionary["Reconstruction Order"]
 
