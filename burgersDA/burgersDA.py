@@ -129,6 +129,10 @@ class Block:
         if IPs["Reconstruction Order"] == 2:
             self.limiter_name = IPs["Limiter"]
             self.compute_LS_LHS_inverse()
+        if "Boundary Conditions" in IPs:
+            self.BC = IPs["Boundary Conditions"]
+        else:
+            self.BC = "Constant Extrapolation"
 
     def initialize_grid(self):
         
@@ -325,6 +329,16 @@ class Block:
                                              +(gl*sA - gr*nA)/v \
                                              +(hl*bA - hr*tA)/v
 
+    def apply_BCs(self):
+        if (self.BC == "Constant Extrapolation"):
+            self.apply_BCs_Constant_Extrapolation()
+        elif (self.BC == "Debug"):
+            self.apply_BCs_debug()
+        elif (self.BC == "None"):
+            pass
+        else:
+           raise Exception("Initial condition not yet implemented")
+    
     def apply_BCs_debug(self): # simpler but potentially slower
         Ngc = self.NGc//2
         for i in range(Ngc, self.M[0] - Ngc): 
@@ -340,7 +354,7 @@ class Block:
                     else:
                         raise IndexError("Should not be accesing ghosts right now")
 
-    def apply_BCs(self):
+    def apply_BCs_Constant_Extrapolation(self):
         Ngc = self.NGc//2
         i1 = Ngc - 1 # second ghost index
         
@@ -669,18 +683,19 @@ class Block:
                                             + dhr + dhl
                     
                     #BCs
-                    if i == Ngc:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dfdu[0]
-                    if i == self.M[0] - Ngc - 1:
-                        self.grid[i][j][k].dqdt+= self.grid[i+1][j][k].dfdu[1]
-                    if j == Ngc:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dgdu[0]
-                    if j == self.M[1] - Ngc - 1:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j+1][k].dgdu[1]
-                    if k == Ngc:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k].dhdu[0]
-                    if k == self.M[2] - Ngc - 1:
-                        self.grid[i][j][k].dqdt+= self.grid[i][j][k+1].dhdu[1]
+                    if self.BC in ["Constant Extrapolation", "Debug"]:
+                        if i == Ngc:
+                            self.grid[i][j][k].dqdt+= self.grid[i][j][k].dfdu[0]
+                        if i == self.M[0] - Ngc - 1:
+                            self.grid[i][j][k].dqdt+= self.grid[i+1][j][k].dfdu[1]
+                        if j == Ngc:
+                            self.grid[i][j][k].dqdt+= self.grid[i][j][k].dgdu[0]
+                        if j == self.M[1] - Ngc - 1:
+                            self.grid[i][j][k].dqdt+= self.grid[i][j+1][k].dgdu[1]
+                        if k == Ngc:
+                            self.grid[i][j][k].dqdt+= self.grid[i][j][k].dhdu[0]
+                        if k == self.M[2] - Ngc - 1:
+                            self.grid[i][j][k].dqdt+= self.grid[i][j][k+1].dhdu[1]
 
     def cell_type(self,i,j,k):
         index = [i,j,k]
@@ -860,7 +875,7 @@ class Block:
         k = I_num[2]
         ct = self.cell_type(i,j,k)
         dRHSdu = np.zeros(3)
-        if ct == 'ghost':
+        if ct == 'ghost' and self.BC in ["Constant Extrapolation", "Debug"]:
             extrapolated = self.find_extrapolated(I_dem[0],I_dem[1],I_dem[2])
             if tuple(I_num) in extrapolated:
                 for I in [-1, 0, 1]: # i coordinate
@@ -883,7 +898,7 @@ class Block:
                                     dX = self.grid[i+I][j+J][k+K].X - X
                                     dRHSdu += dX
 
-        elif ct == 'boundary':
+        elif ct == 'boundary' and self.BC in ["Constant Extrapolation", "Debug"]:
             extrapolated = self.find_extrapolated(I_dem[0],I_dem[1],I_dem[2])
             if I_num == I_dem:
                 for I in [-1, 0, 1]: # i coordinate
@@ -968,12 +983,13 @@ class Block:
                                 duldu = dgraddu[I+1-1][J+1][K+1][:].dot(dX)
                                 durdu = -dgraddu[I+1][J+1][K+1][:].dot(dX)
 
-                                # Contribution from du[i-1]du[i] when u[i-1] = u[i] (BC)
-                                if i+I-1==Ngc-1 and I_dem == [Ngc,j+J,k+K]:
-                                    duldu += 1
-                                # Contribution from du[i+1]du[i] when u[i+1] = u[i] (BC)
-                                if i+I==self.M[0] - Ngc and I_dem == [self.M[0] - Ngc-1,j+J,k+K]:
-                                    durdu += 1
+                                if self.BC in ["Constant Extrapolation", "Debug"]:
+                                    # Contribution from du[i-1]du[i] when u[i-1] = u[i] (BC)
+                                    if i+I-1==Ngc-1 and I_dem == [Ngc,j+J,k+K]:
+                                        duldu += 1
+                                    # Contribution from du[i+1]du[i] when u[i+1] = u[i] (BC)
+                                    if i+I==self.M[0] - Ngc and I_dem == [self.M[0] - Ngc-1,j+J,k+K]:
+                                        durdu += 1
 
                                 if ([i+I-1,j+J,k+K]== I_dem):
                                     duldu += 1
@@ -991,10 +1007,11 @@ class Block:
                                 duldu = dgraddu[I+1][J+1-1][K+1][:].dot(dX)
                                 durdu = -dgraddu[I+1][J+1][K+1][:].dot(dX)
 
-                                if j+J-1==Ngc-1 and I_dem == [i+I,Ngc,k+K]: # From BC
-                                    duldu += 1
-                                if j+J==self.M[1] - Ngc and I_dem == [i+I,self.M[1] - Ngc-1,k+K]:
-                                    durdu += 1
+                                if self.BC in ["Constant Extrapolation", "Debug"]:
+                                    if j+J-1==Ngc-1 and I_dem == [i+I,Ngc,k+K]: # From BC
+                                        duldu += 1
+                                    if j+J==self.M[1] - Ngc and I_dem == [i+I,self.M[1] - Ngc-1,k+K]:
+                                        durdu += 1
 
                                 if ([i+I, j+J-1,k+K]== I_dem):
                                     duldu += 1
@@ -1012,10 +1029,11 @@ class Block:
                                 duldu = dgraddu[I+1][J+1][K+1-1][:].dot(dX)
                                 durdu = -dgraddu[I+1][J+1][K+1][:].dot(dX)
 
-                                if k+K-1==Ngc-1 and I_dem == [i+I,j+J,Ngc]: # From BC
-                                    duldu += 1
-                                if k+K==self.M[2] - Ngc  and I_dem == [i+I,j+J,self.M[2] - Ngc-1]:
-                                    durdu += 1
+                                if self.BC in ["Constant Extrapolation", "Debug"]:
+                                    if k+K-1==Ngc-1 and I_dem == [i+I,j+J,Ngc]: # From BC
+                                        duldu += 1
+                                    if k+K==self.M[2] - Ngc  and I_dem == [i+I,j+J,self.M[2] - Ngc-1]:
+                                        durdu += 1
 
                                 if ([i+I,j+J,k+K-1]== I_dem):
                                     duldu += 1

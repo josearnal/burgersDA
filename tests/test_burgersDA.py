@@ -227,11 +227,13 @@ class TestBlockMethods(unittest.TestCase):
     @unittest.skipIf(int(os.getenv('SKIP')) != 0,'Test is slow')
     def test_plot_gradient_comparison(self):
         IP ={
-            "Initial Condition"     : "Gaussian Bump",
+            "Initial Condition"     : "Toro 1D",
             "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([3,3,3]),
+            "Number of Cells"       : np.array([10,2,2]),
             "Reconstruction Order"  : 2,
-            "Limiter"               : "One"
+            "Limiter"               : "VanLeer",
+            "Boundary Conditions"   : "None"
+            # "Boundary Conditions"   : "Constant Extrapolation"
         }
 
         test_block = Block_test(IP)
