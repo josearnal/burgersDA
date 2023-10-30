@@ -934,8 +934,139 @@ class Block:
             else:
                 dRHSdu = self.grid[tuple(I_dem)].X - X
 
-        return self.grid[tuple(I_num)].Ainv@dRHSdu 
+
+        dgraddu = self.grid[tuple(I_num)].Ainv@dRHSdu 
+        dphidu, phi = self.limiter_Adjoint(I_num,I_dem, dgraddu)
+
+        # DUDX IS ALREADY LIMITED, NEED UNLIMITED
+        output = phi*dgraddu + dphidu*dphidu*self.grid[tuple(I_num)].dudX
+
+
+        dRHSdu = phi*dRHSdu
+
+        return self.grid[tuple(I_num)].Ainv@dRHSdu  + dphidu*self.grid[tuple(I_num)].dudX
         
+    def limiter_Adjoint(self,I_num,I_dem,dgraddu):
+        
+
+        def compute_limiter_fuction(r):
+            
+            if (self.limiter_name == "VanLeer"):
+                return 2.0*r/(1+r)
+            elif (self.limiter_name == "One"):
+                return 1.0
+            elif (self.limiter_name == "Zero"):
+                return 0.0
+            else:
+                raise Exception("Limiter not yet implemented")
+            
+        def compute_limiter_function_Adjoint(r):
+            if (self.limiter_name == "VanLeer"):
+                return 2.0/((1+r)*(1+r))
+            elif (self.limiter_name == "One"):
+                return 0.0
+            elif (self.limiter_name == "Zero"):
+                return 0.0
+            else:
+                raise Exception("Limiter not yet implemented")
+            
+        def compute_limiter(uq,u,umin,umax):
+            if uq > u + 1e-6:
+                r = (umax - u)/(uq - u)
+                min_or_max = 'max'
+            elif uq + 1e-6 < u:
+                r = (umin - u)/(uq - u)
+                min_or_max = 'min'
+            else:
+                return 'zero',1.0
+            # r = max(0,r)
+            return min_or_max,compute_limiter_fuction(r)
+
+        i = I_num[0]
+        j = I_num[1]
+        k = I_num[2]
+
+        # Find min and max u within stencil
+        umin = 1000000.0
+        umax = -1000000.0
+        for I in [-1, 0, 1]: # i coordinate
+            for J in [-1, 0, 1]: # j coordinate
+                for K in [-1, 0, 1]: # k coordinate
+                    uk = self.grid[i+I][j+J][k+K].u
+                    # umin = min(umin,uk)
+                    # umax = max(umax,uk)
+                    min_list = [umin,uk]
+                    max_list = [umax,uk]
+                    # returns indices of min and max
+                    index_min = min(range(2), key=min_list.__getitem__)
+                    index_max = min(range(2), key=max_list.__getitem__)
+                    umin = min_list[index_min]
+                    umax = max_list[index_max]
+
+                    if index_min == 1:
+                        I_min = [i+I,j+J,k+K]
+                    if index_max == 1:
+                        I_max = [i+I,j+J,k+K]
+
+
+        # Find minimum limiter evaluated at the 6 cell faces
+        phi = 2.0
+        u = self.grid[i][j][k].u
+        X = self.grid[i][j][k].X
+        dudX = self.grid[i][j][k].dudX
+        index = [(i-1,j,k),
+                 (i+1,j,k),
+                 (i,j-1,k),
+                 (i,j+1,k),
+                 (i,j,k-1),
+                 (i,j,k+1)]
+
+        for cell in range(6):
+            dX = self.grid[index[cell]].X - X
+            dX = dX/2.0
+            # DUDX IS ALREADY LIMITED, NEED UNLIMITED
+            uq = u + dudX.dot(dX)
+            min_or_max_temp, phi_temp = compute_limiter(uq,u,umin,umax)
+            phi_list = [phi,phi_temp]
+            index_phi_min = min(range(2), key=phi_list.__getitem__)
+            if index_phi_min == 1:
+                phi = phi_temp
+                min_or_max = min_or_max_temp
+                g  = dudX.dot(dX) # term related to gradient
+                g_prime = dgraddu.dot(dX)
+
+        # evaluate derivatives
+        if I_num == I_dem:
+            kronecker = 1.0
+        else:
+            kronecker = 0.0
+        
+        if min_or_max == 'max':
+            r = (umax - u)/(g)
+            if I_max == I_dem:
+                dumaxdu = 1.0 
+            else:
+                dumaxdu = 0.0
+            drdu = ((dumaxdu - kronecker)*g - (umax - u)*g_prime)/(g*g)
+
+        elif min_or_max == 'min':
+            r = (umin - u)/(g)
+            if I_min == I_dem:
+                dumindu = 1.0 
+            else:
+                dumindu = 0.0
+            drdu = ((dumindu - kronecker)*g - (umin - u)*g_prime)/(g*g)
+
+        else:
+            return 0.0, phi
+
+        dlimiterFuncdu = compute_limiter_function_Adjoint(r)
+        dphidu = dlimiterFuncdu*drdu
+
+        return dphidu, phi
+        
+
+
     def compute_residual_order2_Adjoint(self):
         ## LIMIER IGNORED FOR NOW, IMPLEMENT LATER ##
 
