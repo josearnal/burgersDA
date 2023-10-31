@@ -10,6 +10,7 @@ class Cell:
         self.g = 0.0 # y flux at South face
         self.h = 0.0 # z flux at Bottom face
         self.dudX = np.zeros(3) # solution gradient
+        self.dudXUnlimited = np.zeros(3) # Unlimited solution gradient
         self.dudt = 0.0 # solution rate of change
         # self.phi = 0.0 # Limiter
         self.X = np.zeros(3) # Cell centroid
@@ -439,6 +440,7 @@ class Block:
 
 
             self.grid[i][j][k].dudX = self.grid[i][j][k].Ainv@dXdu # Matrix-vector product
+            self.grid[i][j][k].dudXUnlimited = self.grid[i][j][k].dudX 
             # self.grid[i][j][k].dudX[0] = (self.grid[i+1][j][k].u - self.grid[i-1][j][k].u)/(self.grid[i+1][j][k].X[0] - self.grid[i-1][j][k].X[0])
             # self.grid[i][j][k].dudX[1] = (self.grid[i][j+1][k].u - self.grid[i][j+1][k].u)/(self.grid[i][j+1][k].X[1] - self.grid[i][j-1][k].X[1])
             # self.grid[i][j][k].dudX[2] = (self.grid[i][j][k+1].u - self.grid[i][j][k-1].u)/(self.grid[i][j][k+1].X[2] - self.grid[i][j][k-1].X[2])
@@ -938,13 +940,7 @@ class Block:
         dgraddu = self.grid[tuple(I_num)].Ainv@dRHSdu 
         dphidu, phi = self.limiter_Adjoint(I_num,I_dem, dgraddu)
 
-        # DUDX IS ALREADY LIMITED, NEED UNLIMITED
-        output = phi*dgraddu + dphidu*dphidu*self.grid[tuple(I_num)].dudX
-
-
-        dRHSdu = phi*dRHSdu
-
-        return self.grid[tuple(I_num)].Ainv@dRHSdu  + dphidu*self.grid[tuple(I_num)].dudX
+        return phi*dgraddu + dphidu*self.grid[tuple(I_num)].dudXUnlimited
         
     def limiter_Adjoint(self,I_num,I_dem,dgraddu):
         
@@ -989,6 +985,8 @@ class Block:
         # Find min and max u within stencil
         umin = 1000000.0
         umax = -1000000.0
+        I_min = []
+        I_max = []
         for I in [-1, 0, 1]: # i coordinate
             for J in [-1, 0, 1]: # j coordinate
                 for K in [-1, 0, 1]: # k coordinate
@@ -999,9 +997,10 @@ class Block:
                     max_list = [umax,uk]
                     # returns indices of min and max
                     index_min = min(range(2), key=min_list.__getitem__)
-                    index_max = min(range(2), key=max_list.__getitem__)
+                    index_max = max(range(2), key=max_list.__getitem__)
                     umin = min_list[index_min]
                     umax = max_list[index_max]
+                    print('max_list = {}, umax = {}'.format(max_list,umax))
 
                     if index_min == 1:
                         I_min = [i+I,j+J,k+K]
@@ -1013,7 +1012,7 @@ class Block:
         phi = 2.0
         u = self.grid[i][j][k].u
         X = self.grid[i][j][k].X
-        dudX = self.grid[i][j][k].dudX
+        dudX = self.grid[i][j][k].dudXUnlimited
         index = [(i-1,j,k),
                  (i+1,j,k),
                  (i,j-1,k),
@@ -1021,10 +1020,12 @@ class Block:
                  (i,j,k-1),
                  (i,j,k+1)]
 
+        min_or_max = 'zero'
+        g = 0.0
+        g_prime = 1.0
         for cell in range(6):
             dX = self.grid[index[cell]].X - X
             dX = dX/2.0
-            # DUDX IS ALREADY LIMITED, NEED UNLIMITED
             uq = u + dudX.dot(dX)
             min_or_max_temp, phi_temp = compute_limiter(uq,u,umin,umax)
             phi_list = [phi,phi_temp]
@@ -1035,6 +1036,9 @@ class Block:
                 g  = dudX.dot(dX) # term related to gradient
                 g_prime = dgraddu.dot(dX)
 
+        kronecker = 0.0
+        dumaxdu = 0.0
+        dumindu = 0.0
         # evaluate derivatives
         if I_num == I_dem:
             kronecker = 1.0
@@ -1048,6 +1052,8 @@ class Block:
             else:
                 dumaxdu = 0.0
             drdu = ((dumaxdu - kronecker)*g - (umax - u)*g_prime)/(g*g)
+            # print('max')
+            # print(drdu)
 
         elif min_or_max == 'min':
             r = (umin - u)/(g)
@@ -1056,13 +1062,19 @@ class Block:
             else:
                 dumindu = 0.0
             drdu = ((dumindu - kronecker)*g - (umin - u)*g_prime)/(g*g)
+            # print('min')
+            # print(drdu)
 
         else:
+            # print('zero')
             return 0.0, phi
 
         dlimiterFuncdu = compute_limiter_function_Adjoint(r)
         dphidu = dlimiterFuncdu*drdu
 
+        # print('phi = {}, dphidu = {}'.format(phi,dphidu))
+        # print('kronecker = {}, dmaxdu = {}, dmindu = {}'.format(kronecker, dumaxdu, dumindu))
+        # print('g = {}, g_prime = {}'.format(g,g_prime))
         return dphidu, phi
         
 
