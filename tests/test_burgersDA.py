@@ -229,7 +229,7 @@ class TestBlockMethods(unittest.TestCase):
         IP ={
             "Initial Condition"     : "Toro 1D",
             "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([10,2,2]),
+            "Number of Cells"       : np.array([4,1,1]),
             "Reconstruction Order"  : 2,
             "Limiter"               : "VanLeer",
             "Boundary Conditions"   : "None"

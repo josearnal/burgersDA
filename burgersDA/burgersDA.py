@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import warnings
+from copy import deepcopy
 
 class Cell:
 
@@ -474,7 +475,7 @@ class Block:
                 r = (umin - u)/(uq - u)
             else:
                 return 1.0
-            r = max(0,r)
+            # r = max(0,r)
             return compute_limiter_fuction(r)
 
 
@@ -493,7 +494,7 @@ class Block:
         phi = 2.0
         u = self.grid[i][j][k].u
         X = self.grid[i][j][k].X
-        dudX = self.grid[i][j][k].dudX
+        dudX = self.grid[i][j][k].dudXUnlimited
         index = [(i-1,j,k),
                  (i+1,j,k),
                  (i,j-1,k),
@@ -976,118 +977,18 @@ class Block:
                 min_or_max = 'min'
             else:
                 return 'zero',1.0
-            r = max(0,r)
+            # r = max(0,r)
             return min_or_max,compute_limiter_fuction(r)
 
         i = I_num[0]
         j = I_num[1]
         k = I_num[2]
 
-        # # Find min and max u within stencil
-        # umin = 1000000.0
-        # umax = -1000000.0
-        # I_min = []
-        # I_max = []
-        # for I in [-1, 0, 1]: # i coordinate
-        #     for J in [-1, 0, 1]: # j coordinate
-        #         for K in [-1, 0, 1]: # k coordinate
-        #             uk = self.grid[i+I][j+J][k+K].u
-        #             if uk < umin:
-        #                 umin = uk
-        #                 I_min = [i+I,j+J,k+K]
-        #             if uk > umax:
-        #                 umax = uk
-        #                 I_max = [i+I,j+J,k+K]
-        #             # # umin = min(umin,uk)
-        #             # # umax = max(umax,uk)
-        #             # min_list = [umin,uk]
-        #             # max_list = [umax,uk]
-        #             # # returns indices of min and max
-        #             # index_min = min(range(2), key=min_list.__getitem__)
-        #             # index_max = max(range(2), key=max_list.__getitem__)
-        #             # umin = min_list[index_min]
-        #             # umax = max_list[index_max]
-        #             # # print('max_list = {}, umax = {}'.format(max_list,umax))
-
-        #             # if index_min == 1:
-        #             #     I_min = [i+I,j+J,k+K]
-        #             # if index_max == 1:
-        #             #     I_max = [i+I,j+J,k+K]
-
-
-        # # Find minimum limiter evaluated at the 6 cell faces
-        # phi = 2.0
-        # u = self.grid[i][j][k].u
-        # X = self.grid[i][j][k].X
-        # dudX = self.grid[i][j][k].dudXUnlimited
-        # index = [(i-1,j,k),
-        #          (i+1,j,k),
-        #          (i,j-1,k),
-        #          (i,j+1,k),
-        #          (i,j,k-1),
-        #          (i,j,k+1)]
-
-        # min_or_max = 'zero'
-        # g = 0.0
-        # g_prime = 1.0
-        # for cell in range(6):
-        #     dX = self.grid[index[cell]].X - X
-        #     dX = dX/2.0
-        #     uq = u + dudX.dot(dX)
-        #     min_or_max_temp, phi_temp = compute_limiter(uq,u,umin,umax)
-        #     # print(phi_temp)
-        #     if phi_temp < phi:
-        #         phi = phi_temp
-        #         min_or_max = min_or_max_temp
-        #         g  = dudX.dot(dX) # term related to gradient
-        #         g_prime = dgraddu.dot(dX)
-        #     # min_or_max_temp, phi_temp = compute_limiter(uq,u,umin,umax)
-        #     # phi_list = [phi,phi_temp]
-        #     # index_phi_min = min(range(2), key=phi_list.__getitem__)
-        #     # if index_phi_min == 1:
-        #     #     phi = phi_temp
-        #     #     min_or_max = min_or_max_temp
-        #     #     g  = dudX.dot(dX) # term related to gradient
-        #     #     g_prime = dgraddu.dot(dX)
-
-        # kronecker = 0.0
-        # dumaxdu = 0.0
-        # dumindu = 0.0
-        # # evaluate derivatives
-        # if I_num == I_dem:
-        #     kronecker = 1.0
-        # else:
-        #     kronecker = 0.0
-        
-        # if min_or_max == 'max':
-        #     r = (umax - u)/(g)
-        #     if I_max == I_dem:
-        #         dumaxdu = 1.0 
-        #     else:
-        #         dumaxdu = 0.0
-        #     drdu = ((dumaxdu - kronecker)*g - (umax - u)*g_prime)/(g*g)
-        #     # print('max')
-        #     # print(drdu)
-
-        # elif min_or_max == 'min':
-        #     r = (umin - u)/(g)
-        #     if I_min == I_dem:
-        #         dumindu = 1.0 
-        #     else:
-        #         dumindu = 0.0
-        #     drdu = ((dumindu - kronecker)*g - (umin - u)*g_prime)/(g*g)
-        #     # print('min')
-        #     # print(drdu)
-
-        # else:
-        #     # print('zero')
-        #     return 0.0, phi
-
         # Find min and max u within stencil
         umin = 1000000.0
         umax = -1000000.0
-        I_min = [0,0,0]
-        I_max = [0,0,0]
+        I_min = []
+        I_max = []
         for I in [-1, 0, 1]: # i coordinate
             for J in [-1, 0, 1]: # j coordinate
                 for K in [-1, 0, 1]: # k coordinate
@@ -1101,11 +1002,15 @@ class Block:
                             I_min.append((i+I,j+J,k+K))
                         else:
                             I_min = [(i+I,j+J,k+K)]
-                        # umin = uk
+                        umin = uk
                         # I_min = [i+I,j+J,k+K]
                     if uk >= umax:
+                        if uk == umax:
+                            I_max.append((i+I,j+J,k+K))
+                        else:
+                            I_max = [(i+I,j+J,k+K)]
                         umax = uk
-                        I_max = [i+I,j+J,k+K]
+                        # I_max = [i+I,j+J,k+K]
 
 
         # Find minimum limiter evaluated at the 6 cell faces
@@ -1143,7 +1048,7 @@ class Block:
         # print('g = {}, g_prime = {}'.format(g,g_prime))
         # return dphidu, phi
 
-
+        # print(g_prime)
         kronecker = 0.0
         dumaxdu = 0.0
         dumindu = 0.0
@@ -1155,8 +1060,9 @@ class Block:
         
         if min_or_max == 'max':
             r = (umax - u)/(g)
-            if I_max == I_dem:
-                dumaxdu = 1.0 
+            # if I_max == I_dem:
+            if tuple(I_dem) in I_max:
+                dumaxdu = 1.0
             else:
                 dumaxdu = 0.0
             drdu = ((dumaxdu - kronecker)*g - (umax - u)*g_prime)/(g*g)
@@ -1165,8 +1071,8 @@ class Block:
 
         elif min_or_max == 'min':
             r = (umin - u)/(g)
-            if I_min == I_dem:
-                dumindu = 1.0 
+            if tuple(I_dem) in I_min:
+                dumindu = 1.0
             else:
                 dumindu = 0.0
             drdu = ((dumindu - kronecker)*g - (umin - u)*g_prime)/(g*g)
@@ -1175,18 +1081,90 @@ class Block:
 
         else:
             # print('zero')
-            print(phi)
             return 0.0, phi
 
         dlimiterFuncdu = compute_limiter_function_Adjoint(r)
         dphidu = dlimiterFuncdu*drdu
+        dphidu_num = self.limiter_Adjoint_num(I_num,I_dem)
+        print('Inum = {}'.format(I_num))
+        print('Idem = {}'.format(I_dem))
+        print(I_num[0]-I_dem[0],I_num[1]-I_dem[1],I_num[2]-I_dem[2])
+        print('dumaxdu = {}'.format(dumaxdu))
+        print('dumindu = {}'.format(dumindu))
+        print('kronecker={}'.format(kronecker))
+        # if dphidu - dphidu_num > 1 and dumaxdu < 1.0:
+        #     print('**********************************')
+        print(dphidu - dphidu_num)
+        print(dphidu/dphidu_num)
 
-
-
-
-        print(phi)
         return dphidu,phi
+        # return dphidu_num,phi
         
+    def limiter_Adjoint_num(self,I_num,I_dem):
+
+        # def perturb(block,I_num,I_dem):
+        block = deepcopy(self)
+        h = 0.0000000001
+        block.grid[tuple(I_dem)].u += h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        phi_pos = block.grid[tuple(I_num)].dudX[0]/block.grid[tuple(I_num)].dudXUnlimited[0]
+
+        block.grid[tuple(I_dem)].u -= 2.0*h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        phi_neg = block.grid[tuple(I_num)].dudX[0]/block.grid[tuple(I_num)].dudXUnlimited[0]
+
+        dphidu = (phi_pos - phi_neg)/(2.0*h)
+        
+        return(dphidu)
+
+    # def r(self,i,j,k):
+        
+            
+    #     def compute_limiter(uq,u,umin,umax):
+    #         if uq > u + 1e-6:
+    #             r = (umax - u)/(uq - u)
+    #         elif uq + 1e-6 < u:
+    #             r = (umin - u)/(uq - u)
+    #         else:
+    #             return 1.0
+    #         # r = max(0,r)
+    #         return r
+
+
+    #     # Find min and max u within stencil
+    #     umin = 1000000.0
+    #     umax = -1000000.0
+    #     for I in [-1, 0, 1]: # i coordinate
+    #         for J in [-1, 0, 1]: # j coordinate
+    #             for K in [-1, 0, 1]: # k coordinate
+    #                 uk = self.grid[i+I][j+J][k+K].u
+    #                 umin = min(umin,uk)
+    #                 umax = max(umax,uk)
+
+
+    #     # Find minimum limiter evaluated at the 6 cell faces
+    #     phi = 2.0
+    #     u = self.grid[i][j][k].u
+    #     X = self.grid[i][j][k].X
+    #     dudX = self.grid[i][j][k].dudX
+    #     index = [(i-1,j,k),
+    #              (i+1,j,k),
+    #              (i,j-1,k),
+    #              (i,j+1,k),
+    #              (i,j,k-1),
+    #              (i,j,k+1)]
+
+    #     for cell in range(6):
+    #         dX = self.grid[index[cell]].X - X
+    #         dX = dX/2.0
+    #         uq = u + dudX.dot(dX)
+    #         phi = min(phi,compute_limiter(uq,u,umin,umax))
+        
+    #     # print(phi)
+    #     return phi
+
 
 
     def compute_residual_order2_Adjoint(self):
@@ -1295,7 +1273,7 @@ class Block:
 
                                 self.grid[i][j][k].dqdt+= duldu*self.grid[i+I][j+J][k+K].dhdu[0]
                                 self.grid[i][j][k].dqdt+= durdu*self.grid[i+I][j+J][k+K].dhdu[1]
-    
+
 class Solver:
 
     def __init__(self,IPs):
