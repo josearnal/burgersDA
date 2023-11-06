@@ -2,6 +2,39 @@ import numpy as np
 from matplotlib import pyplot as plt
 import warnings
 from copy import deepcopy
+import math
+
+def softmax(X,a=50):
+    numerator = 0.0
+    denominator = 0.0
+    for i in range(len(X)):
+        e = math.exp(a*X[i])
+        numerator += X[i]*e
+        denominator += e
+
+    S = numerator/denominator
+    return S
+
+def softmax_grad(X,a=50):
+    numerator = 0.0
+    denominator = 0.0
+    for i in range(len(X)):
+        e = math.exp(a*X[i])
+        numerator += X[i]*e
+        denominator += e
+
+    S = numerator/denominator
+    grad = []
+    for x in X:
+        grad.append((math.exp(a*x)/denominator)*(1 + a*(x - S)))
+
+    return grad
+
+def softmin(X,a=50):
+    return softmax(np.array(X),-a)
+
+def softmin_grad(X,a=50):
+    return softmax_grad(np.array(X),-a)
 
 class Cell:
 
@@ -13,6 +46,7 @@ class Cell:
         self.dudX = np.zeros(3) # solution gradient
         self.dudXUnlimited = np.zeros(3) # Unlimited solution gradient
         self.dudt = 0.0 # solution rate of change
+        self.phi = 0.0
         # self.phi = 0.0 # Limiter
         self.X = np.zeros(3) # Cell centroid
         self.dX = np.zeros(3) # Dimensions of cell
@@ -441,11 +475,12 @@ class Block:
 
 
             self.grid[i][j][k].dudX = self.grid[i][j][k].Ainv@dXdu # Matrix-vector product
-            self.grid[i][j][k].dudXUnlimited = self.grid[i][j][k].dudX 
+            self.grid[i][j][k].dudXUnlimited = self.grid[i][j][k].dudX
             # self.grid[i][j][k].dudX[0] = (self.grid[i+1][j][k].u - self.grid[i-1][j][k].u)/(self.grid[i+1][j][k].X[0] - self.grid[i-1][j][k].X[0])
             # self.grid[i][j][k].dudX[1] = (self.grid[i][j+1][k].u - self.grid[i][j+1][k].u)/(self.grid[i][j+1][k].X[1] - self.grid[i][j-1][k].X[1])
             # self.grid[i][j][k].dudX[2] = (self.grid[i][j][k+1].u - self.grid[i][j][k-1].u)/(self.grid[i][j][k+1].X[2] - self.grid[i][j][k-1].X[2])
             phi = self.limiter(i,j,k)
+            self.grid[i][j][k].phi = phi
             self.grid[i][j][k].dudX = phi*self.grid[i][j][k].dudX
 
         
@@ -454,13 +489,15 @@ class Block:
                 for k in range(1,self.M[2]-1):
                     compute_solution_gradient(i,j,k)
                 
+
     def limiter(self,i,j,k):
         
 
         def compute_limiter_fuction(r):
             
             if (self.limiter_name == "VanLeer"):
-                return 2.0*r/(1+r)
+                # return 2.0*r/(1+r)
+                return r*r*r
             elif (self.limiter_name == "One"):
                 return 1.0
             elif (self.limiter_name == "Zero"):
@@ -482,16 +519,21 @@ class Block:
         # Find min and max u within stencil
         umin = 1000000.0
         umax = -1000000.0
+        u_list = []
         for I in [-1, 0, 1]: # i coordinate
             for J in [-1, 0, 1]: # j coordinate
                 for K in [-1, 0, 1]: # k coordinate
                     uk = self.grid[i+I][j+J][k+K].u
                     umin = min(umin,uk)
                     umax = max(umax,uk)
+                    # u_list.append(uk)
+
+        # umax = softmax(u_list)
+        # umin = softmin(u_list)
 
 
         # Find minimum limiter evaluated at the 6 cell faces
-        phi = 2.0
+        # phi = 2.0
         u = self.grid[i][j][k].u
         X = self.grid[i][j][k].X
         dudX = self.grid[i][j][k].dudXUnlimited
@@ -502,12 +544,15 @@ class Block:
                  (i,j,k-1),
                  (i,j,k+1)]
 
+        phi_list = []
         for cell in range(6):
             dX = self.grid[index[cell]].X - X
             dX = dX/2.0
             uq = u + dudX.dot(dX)
-            phi = min(phi,compute_limiter(uq,u,umin,umax))
+            # phi = min(phi,compute_limiter(uq,u,umin,umax))
+            phi_list.append(compute_limiter(uq,u,umin,umax))
         
+        phi = softmin(phi_list)
         # print(phi)
         return phi
 
@@ -939,10 +984,33 @@ class Block:
                 dRHSdu = self.grid[tuple(I_dem)].X - X
 
 
-        dgraddu = self.grid[tuple(I_num)].Ainv@dRHSdu 
-        dphidu, phi = self.limiter_Adjoint(I_num,I_dem, dgraddu)
+        # dgraddu = self.grid[tuple(I_num)].Ainv@dRHSdu 
+        # dphidu, phi = self.limiter_Adjoint(I_num,I_dem, dgraddu)
+        # phi = self.grid[tuple(I_num)].dudX[0]/self.grid[tuple(I_num)].dudXUnlimited[0]
+        phi = self.grid[tuple(I_num)].phi
 
-        return phi*dgraddu + dphidu*self.grid[tuple(I_num)].dudXUnlimited
+        # print('phi = {}'.format(self.grid[tuple(I_num)].dudX[0]/self.grid[tuple(I_num)].dudXUnlimited[0]))
+        # print('phi = {}'.format(phi))
+        # print('dphidu = {}'.format(dphidu))
+        dgdu_num = self.limited_gradient_adjoint(I_num,I_dem)
+        dgdu_unlimited_num = self.unlimited_gradient_adjoint(I_num,I_dem)
+        dphidu_num = self.limiter_Adjoint_num(I_num,I_dem)
+
+        # print('dgdu_num = {}'.format(dgdu_num))
+        # print('dgdu = {}'.format(phi*dgraddu + dphidu*self.grid[tuple(I_num)].dudXUnlimited))
+        # print('********')
+        # print(self.grid[i][j][k].dX)
+        # np.set_printoptions(precision=6, suppress=True)
+        # print(phi)
+        # print('dgraddu - dgdu_unlimited_num = {}'.format(dgraddu - dgdu_unlimited_num))
+        # print(dgdu_num - (phi*dgdu_unlimited_num))
+        # print('********')
+
+        # return phi*dgraddu + dphidu*self.grid[tuple(I_num)].dudXUnlimited
+        # return dgdu_num
+        # print(len(phi*dgdu_unlimited_num))
+        # print(len(dphidu_num))
+        return phi*dgdu_unlimited_num + dphidu_num*self.grid[tuple(I_num)].dudX
         
     def limiter_Adjoint(self,I_num,I_dem,dgraddu):
         
@@ -969,10 +1037,10 @@ class Block:
                 raise Exception("Limiter not yet implemented")
             
         def compute_limiter(uq,u,umin,umax):
-            if uq > u + 1e-6:
+            if uq > u + 1e-9:
                 r = (umax - u)/(uq - u)
                 min_or_max = 'max'
-            elif uq + 1e-6 < u:
+            elif uq + 1e-9 < u:
                 r = (umin - u)/(uq - u)
                 min_or_max = 'min'
             else:
@@ -1058,24 +1126,36 @@ class Block:
         else:
             kronecker = 0.0
         
+        drdu = 0.0
+        le = 0.0
         if min_or_max == 'max':
             r = (umax - u)/(g)
             # if I_max == I_dem:
             if tuple(I_dem) in I_max:
-                dumaxdu = 1.0
-            else:
+                # dumaxdu = 1.0 # PUTBACK
+                dumaxdu = 0.5 # REMOVE
+            else:# PUTBACK
                 dumaxdu = 0.0
+
+            # if umax == self.grid[tuple(I_dem)].u:
+            #     dumaxdu = 1.0
             drdu = ((dumaxdu - kronecker)*g - (umax - u)*g_prime)/(g*g)
+            le = dumaxdu
             # print('max')
             # print(drdu)
 
         elif min_or_max == 'min':
             r = (umin - u)/(g)
             if tuple(I_dem) in I_min:
-                dumindu = 1.0
+                # dumindu = 1.0 # PUTBACK
+                dumindu = 0.5 # REMOVE
             else:
                 dumindu = 0.0
+
+            # if umin == self.grid[tuple(I_dem)].u:
+            #     dumindu = 1.0
             drdu = ((dumindu - kronecker)*g - (umin - u)*g_prime)/(g*g)
+            le = dumindu
             # print('min')
             # print(drdu)
 
@@ -1084,87 +1164,200 @@ class Block:
             return 0.0, phi
 
         dlimiterFuncdu = compute_limiter_function_Adjoint(r)
+        dphidu_num = self.limiter_Adjoint_num(I_num,I_dem)# REMOVE
+        # drdu_num = self.r_Adjoint_num(I_num,I_dem)
         dphidu = dlimiterFuncdu*drdu
-        dphidu_num = self.limiter_Adjoint_num(I_num,I_dem)
-        print('Inum = {}'.format(I_num))
-        print('Idem = {}'.format(I_dem))
-        print(I_num[0]-I_dem[0],I_num[1]-I_dem[1],I_num[2]-I_dem[2])
-        print('dumaxdu = {}'.format(dumaxdu))
-        print('dumindu = {}'.format(dumindu))
-        print('kronecker={}'.format(kronecker))
-        # if dphidu - dphidu_num > 1 and dumaxdu < 1.0:
-        #     print('**********************************')
-        print(dphidu - dphidu_num)
-        print(dphidu/dphidu_num)
+        # print('****')
+        # print(dphidu_num)
+        # print(dphidu)
+        # print('****')
+        # if abs(dphidu - dphidu_num) > 0:
+        #     print('dlimiterdu = {}'.format(dlimiterFuncdu))
+        #     print('g_prime = {}, drdu_num = {}'.format(g_prime,drdu_num))
+        #     print('g_prime - drdu_num = {}'.format(g_prime - drdu_num))
+        #     print('Inum = {}'.format(I_num))
+        #     print('Idem = {}'.format(I_dem))
+        #     print(I_num[0]-I_dem[0],I_num[1]-I_dem[1],I_num[2]-I_dem[2])
+        #     print('dumaxdu = {}'.format(dumaxdu))
+        #     print('dumindu = {}'.format(dumindu))
+        #     print('kronecker={}'.format(kronecker))
+        #     # if dphidu - dphidu_num > 1 and dumaxdu < 1.0:
+        #     #     print('**********************************')
+        #     print('dphidu = {}, dphidu_num = {}'.format(dphidu , dphidu_num))
+        #     print(dphidu - dphidu_num)
+        #     print(dphidu/dphidu_num)
 
-        return dphidu,phi
-        # return dphidu_num,phi
+        # return dphidu,phi # PUTBACK
+        return dphidu_num,phi # REMOVE
         
     def limiter_Adjoint_num(self,I_num,I_dem):
 
         # def perturb(block,I_num,I_dem):
+        print('*********')
+        print('limiter_Adjoint_num')
         block = deepcopy(self)
-        h = 0.0000000001
+        h = 0.0000001
         block.grid[tuple(I_dem)].u += h
         block.apply_BCs()
         block.evaluate_reconstruction()
-        phi_pos = block.grid[tuple(I_num)].dudX[0]/block.grid[tuple(I_num)].dudXUnlimited[0]
+        phi_pos = block.grid[tuple(I_num)].phi
+        print('phi_pos = {}'.format(phi_pos))
 
         block.grid[tuple(I_dem)].u -= 2.0*h
         block.apply_BCs()
         block.evaluate_reconstruction()
-        phi_neg = block.grid[tuple(I_num)].dudX[0]/block.grid[tuple(I_num)].dudXUnlimited[0]
+        phi_neg = block.grid[tuple(I_num)].phi
+        print('phi_neg = {}'.format(phi_neg))
 
         dphidu = (phi_pos - phi_neg)/(2.0*h)
         
         return(dphidu)
 
-    # def r(self,i,j,k):
+    def r(self,i,j,k):
         
             
-    #     def compute_limiter(uq,u,umin,umax):
-    #         if uq > u + 1e-6:
-    #             r = (umax - u)/(uq - u)
-    #         elif uq + 1e-6 < u:
-    #             r = (umin - u)/(uq - u)
-    #         else:
-    #             return 1.0
-    #         # r = max(0,r)
-    #         return r
-
-
-    #     # Find min and max u within stencil
-    #     umin = 1000000.0
-    #     umax = -1000000.0
-    #     for I in [-1, 0, 1]: # i coordinate
-    #         for J in [-1, 0, 1]: # j coordinate
-    #             for K in [-1, 0, 1]: # k coordinate
-    #                 uk = self.grid[i+I][j+J][k+K].u
-    #                 umin = min(umin,uk)
-    #                 umax = max(umax,uk)
-
-
-    #     # Find minimum limiter evaluated at the 6 cell faces
-    #     phi = 2.0
-    #     u = self.grid[i][j][k].u
-    #     X = self.grid[i][j][k].X
-    #     dudX = self.grid[i][j][k].dudX
-    #     index = [(i-1,j,k),
-    #              (i+1,j,k),
-    #              (i,j-1,k),
-    #              (i,j+1,k),
-    #              (i,j,k-1),
-    #              (i,j,k+1)]
-
-    #     for cell in range(6):
-    #         dX = self.grid[index[cell]].X - X
-    #         dX = dX/2.0
-    #         uq = u + dudX.dot(dX)
-    #         phi = min(phi,compute_limiter(uq,u,umin,umax))
+        def compute_limiter_fuction(r):
+            
+            if (self.limiter_name == "VanLeer"):
+                return 2.0*r/(1+r)
+            elif (self.limiter_name == "One"):
+                return 1.0
+            elif (self.limiter_name == "Zero"):
+                return 0.0
+            else:
+                raise Exception("Limiter not yet implemented")
+            
+        def compute_limiter(uq,u,umin,umax):
+            if uq > u + 1e-9:
+                r = (umax - u)/(uq - u)
+            elif uq + 1e-9 < u:
+                r = (umin - u)/(uq - u)
+            else:
+                return 1.0
+            # r = max(0,r)
+            return compute_limiter_fuction(r)
         
-    #     # print(phi)
-    #     return phi
+        def compute_r(uq,u,umin,umax):
+            if uq > u + 1e-9:
+                # r = (umax - u)/(uq - u)
+                r = (uq - u)
+                # r = (umax)
+            elif uq + 1e-9 < u:
+                # r = (umin - u)/(uq - u)
+                # r = (umin)
+                r = (uq - u)
+            else:
+                return 0
+            # r = max(0,r)
+            return r
 
+
+        # Find min and max u within stencil
+        umin = 1000000.0
+        umax = -1000000.0
+        for I in [-1, 0, 1]: # i coordinate
+            for J in [-1, 0, 1]: # j coordinate
+                for K in [-1, 0, 1]: # k coordinate
+                    uk = self.grid[i+I][j+J][k+K].u
+                    umin = min(umin,uk)
+                    umax = max(umax,uk)
+
+
+        # Find minimum limiter evaluated at the 6 cell faces
+        phi = 2.0
+        u = self.grid[i][j][k].u
+        X = self.grid[i][j][k].X
+        dudX = self.grid[i][j][k].dudXUnlimited
+        index = [(i-1,j,k),
+                 (i+1,j,k),
+                 (i,j-1,k),
+                 (i,j+1,k),
+                 (i,j,k-1),
+                 (i,j,k+1)]
+
+        r = 0
+        for cell in range(6):
+            dX = self.grid[index[cell]].X - X
+            dX = dX/2.0
+            uq = u + dudX.dot(dX)
+            phi_temp = compute_limiter(uq,u,umin,umax)
+            if phi_temp < phi:
+                phi = phi_temp
+                r = compute_r(uq,u,umin,umax)
+        
+        # print(phi)
+        return r
+    
+    def r_Adjoint_num(self,I_num,I_dem):
+
+        block = deepcopy(self)
+        h = 0.0001
+
+        # block.grid[tuple(I_dem)].u += 2.0*h
+        # block.apply_BCs()
+        # block.evaluate_reconstruction()
+        # r_pos1 = (-1/12)*block.r(*tuple(I_num))
+
+        # block.grid[tuple(I_dem)].u -= h
+        block.grid[tuple(I_dem)].u += h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        # r_pos = (2/3)*block.r(*tuple(I_num))
+        r_pos = block.r(*tuple(I_num))
+        # print('rpos = {}'.format(r_pos))
+
+        block.grid[tuple(I_dem)].u -= 2.0*h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        # r_neg = (-2/3)*block.r(*tuple(I_num))
+        r_neg = block.r(*tuple(I_num))
+
+        # block.grid[tuple(I_dem)].u -= h
+        # block.apply_BCs()
+        # block.evaluate_reconstruction()
+        # r_neg1 = (1/12)*block.r(*tuple(I_num))
+        # print('rneg = {}'.format(r_neg))
+
+        # drdu = (r_pos1 + r_pos + r_neg + r_neg1)/h
+        drdu = (r_pos - r_neg)/(2.0*h)
+        
+        return(drdu)
+
+    def limited_gradient_adjoint(self,I_num,I_dem):
+        print('*********')
+        print('limited_gradient_adjoint')
+        block = deepcopy(self)
+        h = 0.0000001
+        block.grid[tuple(I_dem)].u += h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        g_pos = block.grid[tuple(I_num)].dudX
+        print('phi_pos = {}'.format(block.grid[tuple(I_num)].phi))
+
+        block.grid[tuple(I_dem)].u -= 2.0*h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        g_neg = block.grid[tuple(I_num)].dudX
+        print('phi_neg = {}'.format(block.grid[tuple(I_num)].phi))
+
+        dgdu = (g_pos - g_neg)/(2.0*h)
+        return(dgdu)
+    
+    def unlimited_gradient_adjoint(self,I_num,I_dem):
+        block = deepcopy(self)
+        h = 0.0000001
+        block.grid[tuple(I_dem)].u += h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        g_pos = block.grid[tuple(I_num)].dudXUnlimited
+
+        block.grid[tuple(I_dem)].u -= 2.0*h
+        block.apply_BCs()
+        block.evaluate_reconstruction()
+        g_neg = block.grid[tuple(I_num)].dudXUnlimited
+
+        dgdu = (g_pos - g_neg)/(2.0*h)
+        return(dgdu)
 
 
     def compute_residual_order2_Adjoint(self):

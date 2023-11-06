@@ -89,6 +89,7 @@ def taylor_test(f,dfdu,*u):
         for i in range(len(u)):
             dJ_dot_du = np.dot(np.array(dJ[i]).flatten() , np.array(du[i]).flatten())
             remainder[i][J_eval] = abs(J(f,*u_pert[i]) - J0 - h[J_eval]*dJ_dot_du)
+            # remainder[i][J_eval] = abs((J(f,*u_pert[i]) - J0)/(h[J_eval]*dJ_dot_du) - 1)
 
     return report_convergence(remainder,h)
 
@@ -182,34 +183,43 @@ class TestBlockMethods(unittest.TestCase):
 
         IPs = []
 
-        IPs.append({
-            "Initial Condition"     : "Gaussian Bump",
-            "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([10,10,10]),
-            "Reconstruction Order"  : 1
-        })
+        # IPs.append({
+        #     "Initial Condition"     : "Gaussian Bump",
+        #     "Block Dimensions"      : np.array([1,1,1]),
+        #     "Number of Cells"       : np.array([10,10,10]),
+        #     "Reconstruction Order"  : 1
+        # })
+
+        # IPs.append({
+        #     "Initial Condition"     : "Toro 1D",
+        #     "Block Dimensions"      : np.array([1,1,1]),
+        #     "Number of Cells"       : np.array([10,4,4]),
+        #     "Reconstruction Order"  : 1
+        # })
+
+        # IPs.append({
+        #     "Initial Condition"     : "Gaussian Bump",
+        #     "Block Dimensions"      : np.array([1,1,1]),
+        #     "Number of Cells"       : np.array([10,10,10]),
+        #     "Reconstruction Order"  : 2,
+        #     "Limiter"               : "One"
+        # })
+
+        # IPs.append({
+        #     "Initial Condition"     : "Toro 1D",
+        #     "Block Dimensions"      : np.array([1,1,1]),
+        #     "Number of Cells"       : np.array([10,4,4]),
+        #     "Reconstruction Order"  : 2,
+        #     "Limiter"               : "One"
+        # })
 
         IPs.append({
-            "Initial Condition"     : "Toro 1D",
+            "Initial Condition"     : "Gaussian Bump 2D",
             "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([10,4,4]),
-            "Reconstruction Order"  : 1
-        })
-
-        IPs.append({
-            "Initial Condition"     : "Gaussian Bump",
-            "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([10,10,10]),
+            "Number of Cells"       : np.array([7,1,1]),
             "Reconstruction Order"  : 2,
-            "Limiter"               : "One"
-        })
-
-        IPs.append({
-            "Initial Condition"     : "Toro 1D",
-            "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([10,4,4]),
-            "Reconstruction Order"  : 2,
-            "Limiter"               : "One"
+            "Limiter"               : "VanLeer",
+            "Boundary Conditions"   : "None"
         })
 
         for IP in IPs:
@@ -227,9 +237,9 @@ class TestBlockMethods(unittest.TestCase):
     @unittest.skipIf(int(os.getenv('SKIP')) != 0,'Test is slow')
     def test_plot_gradient_comparison(self):
         IP ={
-            "Initial Condition"     : "Toro 1D",
+            "Initial Condition"     : "Gaussian Bump 2D",
             "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([4,1,1]),
+            "Number of Cells"       : np.array([7,1,1]),
             "Reconstruction Order"  : 2,
             "Limiter"               : "VanLeer",
             "Boundary Conditions"   : "None"
