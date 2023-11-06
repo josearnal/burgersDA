@@ -533,7 +533,7 @@ class Block:
 
 
         # Find minimum limiter evaluated at the 6 cell faces
-        # phi = 2.0
+        phi = 2.0
         u = self.grid[i][j][k].u
         X = self.grid[i][j][k].X
         dudX = self.grid[i][j][k].dudXUnlimited
@@ -549,10 +549,10 @@ class Block:
             dX = self.grid[index[cell]].X - X
             dX = dX/2.0
             uq = u + dudX.dot(dX)
-            # phi = min(phi,compute_limiter(uq,u,umin,umax))
-            phi_list.append(compute_limiter(uq,u,umin,umax))
+            phi = min(phi,compute_limiter(uq,u,umin,umax))
+            # phi_list.append(compute_limiter(uq,u,umin,umax))
         
-        phi = softmin(phi_list)
+        # phi = softmin(phi_list)
         # print(phi)
         return phi
 
