@@ -65,6 +65,14 @@ def taylor_test(f,dfdu,*u):
                 print('{:.14f} | {}'.format(convergence[i][j-1],h[j]))
             
         return convergence
+    
+    def plot_remainder(remainder,h):
+        for i in range(remainder.shape[0]):
+            print('input {}'.format(i))
+            print('-------')
+            plt.loglog(h,remainder[i][:],'.')
+            plt.show()
+
         
 
     J0 = J(f,*u)
@@ -91,6 +99,7 @@ def taylor_test(f,dfdu,*u):
             remainder[i][J_eval] = abs(J(f,*u_pert[i]) - J0 - h[J_eval]*dJ_dot_du)
             # remainder[i][J_eval] = abs((J(f,*u_pert[i]) - J0)/(h[J_eval]*dJ_dot_du) - 1)
 
+    # plot_remainder(remainder,h)
     return report_convergence(remainder,h)
 
 class TestBlockMethods(unittest.TestCase):
@@ -183,44 +192,46 @@ class TestBlockMethods(unittest.TestCase):
 
         IPs = []
 
-        # IPs.append({
-        #     "Initial Condition"     : "Gaussian Bump",
-        #     "Block Dimensions"      : np.array([1,1,1]),
-        #     "Number of Cells"       : np.array([10,10,10]),
-        #     "Reconstruction Order"  : 1
-        # })
-
-        # IPs.append({
-        #     "Initial Condition"     : "Toro 1D",
-        #     "Block Dimensions"      : np.array([1,1,1]),
-        #     "Number of Cells"       : np.array([10,4,4]),
-        #     "Reconstruction Order"  : 1
-        # })
-
-        # IPs.append({
-        #     "Initial Condition"     : "Gaussian Bump",
-        #     "Block Dimensions"      : np.array([1,1,1]),
-        #     "Number of Cells"       : np.array([10,10,10]),
-        #     "Reconstruction Order"  : 2,
-        #     "Limiter"               : "One"
-        # })
-
-        # IPs.append({
-        #     "Initial Condition"     : "Toro 1D",
-        #     "Block Dimensions"      : np.array([1,1,1]),
-        #     "Number of Cells"       : np.array([10,4,4]),
-        #     "Reconstruction Order"  : 2,
-        #     "Limiter"               : "One"
-        # })
+        IPs.append({
+            "Initial Condition"     : "Gaussian Bump",
+            "Block Dimensions"      : np.array([1,1,1]),
+            "Number of Cells"       : np.array([10,10,10]),
+            "Reconstruction Order"  : 1
+        })
 
         IPs.append({
-            "Initial Condition"     : "Gaussian Bump 2D",
+            "Initial Condition"     : "Toro 1D",
             "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([7,1,1]),
+            "Number of Cells"       : np.array([10,4,4]),
+            "Reconstruction Order"  : 1
+        })
+
+        IPs.append({
+            "Initial Condition"     : "Gaussian Bump",
+            "Block Dimensions"      : np.array([1,1,1]),
+            "Number of Cells"       : np.array([10,10,10]),
+            "Reconstruction Order"  : 2,
+            "Limiter"               : "One"
+        })
+
+        IPs.append({
+            "Initial Condition"     : "Toro 1D",
+            "Block Dimensions"      : np.array([1,1,1]),
+            "Number of Cells"       : np.array([10,4,4]),
+            "Reconstruction Order"  : 2,
+            "Limiter"               : "One"
+        })
+
+        IPs.append({
+            "Initial Condition"     : "Gaussian Bump",
+            "Block Dimensions"      : np.array([1,1,1]),
+            "Number of Cells"       : np.array([10,10,10]),
             "Reconstruction Order"  : 2,
             "Limiter"               : "VanLeer",
+            "Limiter Mode"          : "Soft",
             "Boundary Conditions"   : "None"
         })
+
 
         for IP in IPs:
             test_block = Block_test(IP)
@@ -239,16 +250,37 @@ class TestBlockMethods(unittest.TestCase):
         IP ={
             "Initial Condition"     : "Gaussian Bump 2D",
             "Block Dimensions"      : np.array([1,1,1]),
-            "Number of Cells"       : np.array([7,1,1]),
+            "Number of Cells"       : np.array([5,5,5]),
             "Reconstruction Order"  : 2,
             "Limiter"               : "VanLeer",
-            "Boundary Conditions"   : "None"
-            # "Boundary Conditions"   : "Constant Extrapolation"
+            "Limiter Mode"          : "Soft",
+            "Boundary Conditions"   : "Constant Extrapolation"
         }
 
         test_block = Block_test(IP)
         u = test_block.get_u()
         test_block.plot_gradient_comparison(u)
+
+    @unittest.skipIf(int(os.getenv('SKIP')) != 0,'Expected faliure')
+    def test_grad_max(self):
+
+        def max(x):
+            return np.max(x)
+
+        def max_grad(x,psi):
+            max_x = np.max(x)
+            grad  = np.zeros(len(x))
+            counter = 0
+            for i in range(len(x)):
+                if x[i]==max_x:
+                    counter += 1
+                    grad[i] = 1.0
+            grad = grad/counter
+            # print(grad)
+            return np.array(grad).dot(np.array(psi))
+        
+        u = [1.0,2.0,2.0,2.0]
+        taylor_test(max,max_grad,u)
 
 class Block_test(Block):
 
@@ -332,7 +364,7 @@ class Block_test(Block):
 
          def dRdu_num(f,u):
             Ngc = self.NGc//2
-            h = 0.000001
+            h = 1e-5
             dRdu = np.zeros([u.size,u.size])
             index = 0
             for i in range(Ngc, self.M[0] - Ngc): 
