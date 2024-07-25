@@ -328,7 +328,7 @@ class Block:
                     u = self.grid[i][j][k].u
                     X = self.grid[i][j][k].X
                     dudX = self.grid[i][j][k].dudX
-                    index =[(i-1,j,k), # East
+                    index =[(i-1,j,k), # West
                             (i,j-1,k), # South
                             (i,j,k-1)] # Bottom
                     
@@ -754,7 +754,7 @@ class Block:
                     u = self.grid[i][j][k].u
                     X = self.grid[i][j][k].X
                     dudX = self.grid[i][j][k].dudX
-                    index =[(i-1,j,k), # East
+                    index =[(i-1,j,k), # West
                             (i,j-1,k), # South
                             (i,j,k-1)] # Bottom
                     
